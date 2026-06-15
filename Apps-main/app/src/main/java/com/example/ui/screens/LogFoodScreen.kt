@@ -49,6 +49,8 @@ import com.example.ui.viewmodel.NutritionViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import kotlinx.coroutines.launch
 import java.util.concurrent.Executor
 
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
@@ -81,6 +83,18 @@ fun LogFoodScreen(
     var customServingSize by remember { mutableStateOf("") }
     var customServingUnit by remember { mutableStateOf("") }
 
+    val coroutineScope = rememberCoroutineScope()
+    var isFetchingLocation by remember { mutableStateOf(false) }
+    var fetchedLocationName by remember { mutableStateOf<String?>(null) }
+    var fetchedLatitude by remember { mutableStateOf<Double?>(null) }
+    var fetchedLongitude by remember { mutableStateOf<Double?>(null) }
+    val locationPermissionState = rememberMultiplePermissionsState(
+        permissions = listOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+    )
+
     // Bind current details on visual recognition success
     LaunchedEffect(analysisState) {
         val resState = analysisState
@@ -94,6 +108,10 @@ fun LogFoodScreen(
             customServingSize = res.servingSize.toString()
             customServingUnit = res.servingUnit
             showEditSheet = true
+            // Reset location state for new item
+            fetchedLocationName = null
+            fetchedLatitude = null
+            fetchedLongitude = null
         }
     }
 
@@ -660,6 +678,61 @@ fun LogFoodScreen(
                                         modifier = Modifier.weight(1f).testTag("ai_serving_unit_input")
                                     )
                                 }
+
+                                Spacer(modifier = Modifier.height(4.dp))
+                                if (fetchedLocationName != null) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .geminiGlowBorder(borderWidth = 1.dp, cornerRadius = 12.dp)
+                                            .background(CardDark, RoundedCornerShape(12.dp))
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = SoftLime, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("📍 At: $fetchedLocationName", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                } else if (isFetchingLocation) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text("Detecting location...", color = SoftLime, fontSize = 12.sp)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        GeminiWaves(modifier = Modifier.fillMaxWidth(), isThinking = true, heightDp = 20.dp)
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = {
+                                            if (locationPermissionState.allPermissionsGranted) {
+                                                isFetchingLocation = true
+                                                coroutineScope.launch {
+                                                    val locationHelper = com.example.domain.location.LocationHelper(context)
+                                                    val loc = locationHelper.getCurrentLocation()
+                                                    if (loc != null) {
+                                                        fetchedLatitude = loc.latitude
+                                                        fetchedLongitude = loc.longitude
+                                                        val name = locationHelper.getLocationName(loc.latitude, loc.longitude)
+                                                        fetchedLocationName = name ?: "Unknown Location"
+                                                    } else {
+                                                        fetchedLocationName = "Location not found"
+                                                    }
+                                                    isFetchingLocation = false
+                                                }
+                                            } else {
+                                                locationPermissionState.launchMultiplePermissionRequest()
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                                        border = BorderStroke(1.dp, SoftLime.copy(alpha = 0.5f)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = SoftLime, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Tag Current Location", color = SoftLime)
+                                    }
+                                }
                             }
                         },
                         confirmButton = {
@@ -681,7 +754,10 @@ fun LogFoodScreen(
                                         fats = fatsVal,
                                         mealType = mealType,
                                         servingSize = sizeVal,
-                                        servingUnit = unitVal
+                                        servingUnit = unitVal,
+                                        latitude = fetchedLatitude,
+                                        longitude = fetchedLongitude,
+                                        locationName = fetchedLocationName
                                     )
                                     showEditSheet = false
                                     viewModel.resetCameraState()

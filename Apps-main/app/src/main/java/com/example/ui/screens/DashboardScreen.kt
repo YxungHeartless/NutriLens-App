@@ -1221,6 +1221,14 @@ fun FoodEntryRow(
                     color = GrayText,
                     fontSize = 11.sp
                 )
+                if (entry.locationName != null) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = SoftLime, modifier = Modifier.size(10.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(entry.locationName, color = SoftLime, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MacroPill(label = "P: ${entry.protein.toInt()}g", color = ProteinOrange)

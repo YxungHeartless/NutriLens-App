@@ -12,5 +12,8 @@ data class FoodLog(
     val imagePath: String? = null,
     val barcode: String? = null,
     val servingSize: Double = 1.0,
-    val servingUnit: String = "serving"
+    val servingUnit: String = "serving",
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val locationName: String? = null
 )

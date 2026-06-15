@@ -16,5 +16,8 @@ data class FoodEntry(
     val servingUnit: String,
     val timestamp: Long = System.currentTimeMillis(),
     val barcode: String? = null,
-    val isSynced: Boolean = true
+    val isSynced: Boolean = true,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val locationName: String? = null
 )

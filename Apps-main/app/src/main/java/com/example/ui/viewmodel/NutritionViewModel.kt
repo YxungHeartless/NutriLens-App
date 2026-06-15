@@ -390,7 +390,10 @@ class NutritionViewModel(
         mealType: MealType,
         servingSize: Double,
         servingUnit: String,
-        barcode: String? = null
+        barcode: String? = null,
+        latitude: Double? = null,
+        longitude: Double? = null,
+        locationName: String? = null
     ) {
         viewModelScope.launch {
             val isSyncedNow = !isOfflineMode.value
@@ -404,7 +407,10 @@ class NutritionViewModel(
                 servingSize = servingSize,
                 servingUnit = servingUnit,
                 barcode = barcode,
-                isSynced = isSyncedNow
+                isSynced = isSyncedNow,
+                latitude = latitude,
+                longitude = longitude,
+                locationName = locationName
             )
             dao.insertEntry(entry)
         }

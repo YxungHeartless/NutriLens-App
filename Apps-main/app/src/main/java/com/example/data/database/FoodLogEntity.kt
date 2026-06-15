@@ -18,7 +18,10 @@ data class FoodLogEntity(
     val imagePath: String?,
     val barcode: String?,
     val servingSize: Double,
-    val servingUnit: String
+    val servingUnit: String,
+    val latitude: Double?,
+    val longitude: Double?,
+    val locationName: String?
 ) {
     fun toDomain(): FoodLog {
         val mealEnum = try {
@@ -38,7 +41,10 @@ data class FoodLogEntity(
             imagePath = imagePath,
             barcode = barcode,
             servingSize = servingSize,
-            servingUnit = servingUnit
+            servingUnit = servingUnit,
+            latitude = latitude,
+            longitude = longitude,
+            locationName = locationName
         )
     }
 
@@ -56,7 +62,10 @@ data class FoodLogEntity(
                 imagePath = domain.imagePath,
                 barcode = domain.barcode,
                 servingSize = domain.servingSize,
-                servingUnit = domain.servingUnit
+                servingUnit = domain.servingUnit,
+                latitude = domain.latitude,
+                longitude = domain.longitude,
+                locationName = domain.locationName
             )
         }
     }
