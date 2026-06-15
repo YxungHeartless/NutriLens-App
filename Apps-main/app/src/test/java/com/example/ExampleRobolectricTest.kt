@@ -103,8 +103,7 @@ class ExampleRobolectricTest {
     for (i in 1..30) {
       if (unsyncedAfter.isEmpty()) break
       println("DEBUG: Waiting for DB sync to finish... Attempt $i")
-      kotlinx.coroutines.delay(100)
-      org.robolectric.shadows.ShadowLooper.idleMainLooper()
+      org.robolectric.shadows.ShadowLooper.idleMainLooper(100, java.util.concurrent.TimeUnit.MILLISECONDS)
       unsyncedAfter = dao.getUnsyncedEntries()
     }
     println("DEBUG: Unsynced entries count after sync wait: ${unsyncedAfter.size}")

@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
@@ -10,47 +9,15 @@
     <path
         android:strokeWidth="1.8"
         android:strokeLineCap="round"
-        android:strokeColor="#00000000"
-        android:pathData="M54,16 A38,38 0 0,1 92,54">
-        <aapt:attr name="android:strokeColor">
-            <gradient
-                android:startX="54"
-                android:startY="16"
-                android:endX="92"
-                android:endY="54"
-                android:type="linear">
-                <item
-                    android:color="#00F0FF"
-                    android:offset="0.0" />
-                <item
-                    android:color="#9E00FF"
-                    android:offset="1.0" />
-            </gradient>
-        </aapt:attr>
-    </path>
+        android:strokeColor="#9E00FF"
+        android:pathData="M54,16 A38,38 0 0,1 92,54" />
 
     <!-- Outer Camera Lens Ring - Segment 2 (Bottom to Left) -->
     <path
         android:strokeWidth="1.8"
         android:strokeLineCap="round"
-        android:strokeColor="#00000000"
-        android:pathData="M54,92 A38,38 0 0,1 18,54">
-        <aapt:attr name="android:strokeColor">
-            <gradient
-                android:startX="54"
-                android:startY="92"
-                android:endX="18"
-                android:endY="54"
-                android:type="linear">
-                <item
-                    android:color="#FFFFB800"
-                    android:offset="0.0" />
-                <item
-                    android:color="#FF007A"
-                    android:offset="1.0" />
-            </gradient>
-        </aapt:attr>
-    </path>
+        android:strokeColor="#FF007A"
+        android:pathData="M54,92 A38,38 0 0,1 18,54" />
 
     <!-- Small Lens Aperture Detail (Top-Right indicator dot) -->
     <path
@@ -59,27 +26,8 @@
 
     <!-- Central Sparkle Star (Gemini AI Style) -->
     <path
-        android:fillColor="#00000000"
-        android:pathData="M54,26 Q54,54 82,54 Q54,54 54,82 Q54,54 26,54 Q54,54 54,26 Z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:startX="54"
-                android:startY="26"
-                android:endX="54"
-                android:endY="82"
-                android:type="linear">
-                <item
-                    android:color="#C4F4FF"
-                    android:offset="0.0" />
-                <item
-                    android:color="#FFC5EC"
-                    android:offset="0.5" />
-                <item
-                    android:color="#8A51FF"
-                    android:offset="1.0" />
-            </gradient>
-        </aapt:attr>
-    </path>
+        android:fillColor="#8A51FF"
+        android:pathData="M54,26 Q54,54 82,54 Q54,54 54,82 Q54,54 26,54 Q54,54 54,26 Z" />
 
     <!-- Tiny Sparkle Accent 1 (Top-Left) -->
     <path
