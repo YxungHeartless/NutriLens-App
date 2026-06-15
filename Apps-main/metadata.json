@@ -1,0 +1,6 @@
+{
+  "name": "Visual Nutrition Tracker",
+  "description": "A dark-themed Visual Nutrition Tracker featuring AI-powered camera capture estimates, barcode UPC scanning, manual preset additions, and interactive personal macro-goal targets built with Jetpack Compose.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
