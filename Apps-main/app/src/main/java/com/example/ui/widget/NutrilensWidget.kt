@@ -19,6 +19,7 @@ import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.SizeMode
+import androidx.glance.appwidget.LinearProgressIndicator
 import androidx.glance.background
 import androidx.glance.layout.*
 import androidx.glance.text.Text
@@ -250,38 +251,13 @@ fun MacroProgressBarItem(
                 style = TextStyle(color = ColorProvider(Color(0xFF94A3B8)), fontSize = 10.sp)
             )
         }
-        Spacer(modifier = GlanceModifier.height(3.dp))
-        // Linear Progress bar using layered boxes
-        val progressPercent = (progress * 100).toInt()
-        val progressCoerced = progress.coerceIn(0.0, 1.0)
-        Box(
-            modifier = GlanceModifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .background(Color(0xFF334155))
-        ) {
-            if (progressCoerced >= 1.0) {
-                Box(
-                    modifier = GlanceModifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .background(color)
-                ) {}
-            } else if (progressCoerced > 0.0) {
-                Row(modifier = GlanceModifier.fillMaxWidth().height(6.dp)) {
-                    Box(
-                        modifier = GlanceModifier
-                            .defaultWeight(progressCoerced.toFloat())
-                            .fillMaxHeight()
-                            .background(color)
-                    ) {}
-                    Spacer(
-                        modifier = GlanceModifier
-                            .defaultWeight((1.0 - progressCoerced).toFloat())
-                    )
-                }
-            }
-        }
+        val progressCoerced = progress.coerceIn(0.0, 1.0).toFloat()
+        LinearProgressIndicator(
+            progress = progressCoerced,
+            modifier = GlanceModifier.fillMaxWidth().height(6.dp),
+            color = ColorProvider(color),
+            backgroundColor = ColorProvider(Color(0xFF334155))
+        )
     }
 }
 

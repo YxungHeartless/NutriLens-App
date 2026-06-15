@@ -5,7 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 val SlateBg: Color @Composable get() = MaterialTheme.colorScheme.background
-val CardDark: Color @Composable get() = MaterialTheme.colorScheme.surface
+val CardDark: Color @Composable get() = MaterialTheme.colorScheme.surfaceVariant
 val HealthyGreen: Color @Composable get() = MaterialTheme.colorScheme.secondary
 val SoftLime: Color @Composable get() = MaterialTheme.colorScheme.primary
 val GrayText: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant

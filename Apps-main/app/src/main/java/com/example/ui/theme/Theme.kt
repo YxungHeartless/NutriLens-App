@@ -13,12 +13,18 @@ import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme =
   darkColorScheme(
-    primary = CosmicSlatePrimaryDark,
+    primary = Color(0xFFC4F024), // Vibrant Soft Lime Glow for active accent
     onPrimary = CosmicSlateDarkBg,
-    secondary = CosmicSlateSecondaryDark,
-    onSecondary = Color.White,
+    primaryContainer = Color(0xFF3F4E00), // Dark green-lime container for active states
+    onPrimaryContainer = Color(0xFFE3FF6B),
+    secondary = Color(0xFF34D399), // Emerald Healthy Green
+    onSecondary = Color(0xFF064E3B),
+    secondaryContainer = Color(0xFF064E3B),
+    onSecondaryContainer = Color(0xFFA7F3D0),
     tertiary = CosmicSlateTertiaryDark,
     onTertiary = Color.White,
+    tertiaryContainer = Color(0xFF7F1D1D),
+    onTertiaryContainer = Color(0xFFFCA5A5),
     background = CosmicSlateDarkBg,
     onBackground = CosmicSlateOnBackgroundDark,
     surface = CosmicSlateDarkSurface,
@@ -32,10 +38,16 @@ private val LightColorScheme =
   lightColorScheme(
     primary = CosmicSlatePrimaryLight,
     onPrimary = Color.White,
+    primaryContainer = Color(0xFFECFCCB), // Light lime container for active states
+    onPrimaryContainer = CosmicSlatePrimaryLight,
     secondary = CosmicSlateSecondaryLight,
     onSecondary = Color.White,
+    secondaryContainer = Color(0xFFD1FAE5),
+    onSecondaryContainer = CosmicSlateSecondaryLight,
     tertiary = CosmicSlateTertiaryLight,
     onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFFCE7F3),
+    onTertiaryContainer = CosmicSlateTertiaryLight,
     background = CosmicSlateLightBg,
     onBackground = CosmicSlateOnBackgroundLight,
     surface = CosmicSlateLightSurface,

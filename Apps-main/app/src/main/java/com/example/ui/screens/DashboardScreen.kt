@@ -7,7 +7,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,7 +14,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.draw.scale
@@ -57,12 +55,17 @@ import com.example.domain.model.MealType
 import com.example.ui.components.*
 import com.example.ui.viewmodel.NutritionViewModel
 import kotlin.math.min
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.animation.ExperimentalSharedTransitionApi
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun DashboardScreen(
     navController: NavController,
-    viewModel: NutritionViewModel
+    viewModel: NutritionViewModel,
+    widthSizeClass: WindowWidthSizeClass,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope
 ) {
     val entries by viewModel.loggedMeals.collectAsState()
     val calorieGoal by viewModel.calorieGoal.collectAsState()
@@ -71,10 +74,6 @@ fun DashboardScreen(
     val fatsGoal by viewModel.fatsGoal.collectAsState()
 
     val todayActiveCalories by viewModel.todayActiveCalories.collectAsState()
-    val chatMessages by viewModel.chatMessages.collectAsState()
-    val isAiThinking by viewModel.isAiThinking.collectAsState()
-    var showChatDialog by remember { mutableStateOf(false) }
-
     var showGoalDialog by remember { mutableStateOf(false) }
 
     val allMeals by viewModel.allLoggedMeals.collectAsState()
@@ -113,11 +112,24 @@ fun DashboardScreen(
         list
     }
 
-    // Aggregate values
     val totalCalories = entries.sumOf { it.calories }
     val totalProtein = entries.sumOf { it.protein }
     val totalCarbs = entries.sumOf { it.carbs }
     val totalFats = entries.sumOf { it.fats }
+
+    var selectedEntryId by remember { mutableStateOf<Int?>(null) }
+    val dashboardSections by viewModel.dashboardSections.collectAsState()
+    var activeMacroFilter by remember { mutableStateOf("All") }
+    var dashboardModeIndex by remember { mutableStateOf(0) } // 0 = Daily View, 1 = Weekly Trend
+
+    val filteredEntries = remember(entries, activeMacroFilter) {
+        when (activeMacroFilter) {
+            "High Protein" -> entries.filter { it.protein >= 15.0 }
+            "High Carbs" -> entries.filter { it.carbs >= 30.0 }
+            "High Fats" -> entries.filter { it.fats >= 10.0 }
+            else -> entries
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -175,694 +187,478 @@ fun DashboardScreen(
             )
         },
         floatingActionButton = {
-            var expanded by remember { mutableStateOf(false) }
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.padding(bottom = 16.dp)
-            ) {
-                Box {
-                    FloatingActionButton(
-                        onClick = { expanded = !expanded },
+            // Only show FABs on compact screen. Expanded screen has FAB in NavigationRail
+            if (widthSizeClass == WindowWidthSizeClass.Compact) {
+                var expanded by remember { mutableStateOf(false) }
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                ) {
+                    Box {
+                        FloatingActionButton(
+                            onClick = { expanded = !expanded },
+                            containerColor = SoftLime,
+                            modifier = Modifier.testTag("quick_log_fab")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Quick Log Meal",
+                                tint = SlateBg
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false },
+                            modifier = Modifier
+                                .background(CardDark)
+                                .border(1.dp, SoftLime.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                .testTag("quick_log_dropdown_menu")
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Breakfast", color = Color.White, fontWeight = FontWeight.Bold) },
+                                onClick = {
+                                    expanded = false
+                                    navController.navigate("log_food/${MealType.BREAKFAST.name}")
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Restaurant, contentDescription = "Breakfast", tint = SoftLime, modifier = Modifier.size(18.dp))
+                                },
+                                modifier = Modifier.testTag("quick_log_item_breakfast")
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Lunch", color = Color.White, fontWeight = FontWeight.Bold) },
+                                onClick = {
+                                    expanded = false
+                                    navController.navigate("log_food/${MealType.LUNCH.name}")
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Restaurant, contentDescription = "Lunch", tint = SoftLime, modifier = Modifier.size(18.dp))
+                                },
+                                modifier = Modifier.testTag("quick_log_item_lunch")
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Dinner", color = Color.White, fontWeight = FontWeight.Bold) },
+                                onClick = {
+                                    expanded = false
+                                    navController.navigate("log_food/${MealType.DINNER.name}")
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Restaurant, contentDescription = "Dinner", tint = SoftLime, modifier = Modifier.size(18.dp))
+                                },
+                                modifier = Modifier.testTag("quick_log_item_dinner")
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Snack", color = Color.White, fontWeight = FontWeight.Bold) },
+                                onClick = {
+                                    expanded = false
+                                    navController.navigate("log_food/${MealType.SNACK.name}")
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Restaurant, contentDescription = "Snack", tint = SoftLime, modifier = Modifier.size(18.dp))
+                                },
+                                modifier = Modifier.testTag("quick_log_item_snack")
+                            )
+                        }
+                    }
+
+                    ExtendedFloatingActionButton(
+                        onClick = { navController.navigate("ai_coach") },
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.Face,
+                                contentDescription = "AI Coach",
+                                tint = SlateBg
+                            )
+                        },
+                        text = { Text("AI Coach", color = SlateBg, fontWeight = FontWeight.Bold) },
                         containerColor = SoftLime,
-                        modifier = Modifier.testTag("quick_log_fab")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Quick Log Meal",
-                            tint = SlateBg
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false },
-                        modifier = Modifier
-                            .background(CardDark)
-                            .border(1.dp, SoftLime.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                            .testTag("quick_log_dropdown_menu")
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Breakfast", color = Color.White, fontWeight = FontWeight.Bold) },
-                            onClick = {
-                                expanded = false
-                                navController.navigate("log_food/${MealType.BREAKFAST.name}")
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Restaurant, contentDescription = "Breakfast", tint = SoftLime, modifier = Modifier.size(18.dp))
-                            },
-                            modifier = Modifier.testTag("quick_log_item_breakfast")
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Lunch", color = Color.White, fontWeight = FontWeight.Bold) },
-                            onClick = {
-                                expanded = false
-                                navController.navigate("log_food/${MealType.LUNCH.name}")
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Restaurant, contentDescription = "Lunch", tint = SoftLime, modifier = Modifier.size(18.dp))
-                            },
-                            modifier = Modifier.testTag("quick_log_item_lunch")
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Dinner", color = Color.White, fontWeight = FontWeight.Bold) },
-                            onClick = {
-                                expanded = false
-                                navController.navigate("log_food/${MealType.DINNER.name}")
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Restaurant, contentDescription = "Dinner", tint = SoftLime, modifier = Modifier.size(18.dp))
-                            },
-                            modifier = Modifier.testTag("quick_log_item_dinner")
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Snack", color = Color.White, fontWeight = FontWeight.Bold) },
-                            onClick = {
-                                expanded = false
-                                navController.navigate("log_food/${MealType.SNACK.name}")
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Restaurant, contentDescription = "Snack", tint = SoftLime, modifier = Modifier.size(18.dp))
-                            },
-                            modifier = Modifier.testTag("quick_log_item_snack")
-                        )
-                    }
+                        modifier = Modifier.testTag("ai_coach_fab")
+                    )
                 }
-
-                ExtendedFloatingActionButton(
-                    onClick = { showChatDialog = true },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Default.Face,
-                            contentDescription = "AI Coach",
-                            tint = SlateBg
-                        )
-                    },
-                    text = { Text("AI Coach", color = SlateBg, fontWeight = FontWeight.Bold) },
-                    containerColor = SoftLime,
-                    modifier = Modifier.testTag("ai_coach_fab")
-                )
             }
         },
         containerColor = SlateBg
     ) { paddingValues ->
-        val dashboardSections by viewModel.dashboardSections.collectAsState()
-
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
-        ) {
-            dashboardSections.forEach { sectionId ->
-                when (sectionId) {
-                    "macro_gauges" -> {
-                        item(key = "macro_gauges") {
-                            ReorderableSectionWrapper(
-                                sectionId = "macro_gauges",
-                                title = "Macro Gauges",
-                                viewModel = viewModel,
-                                sectionOrder = dashboardSections
+        if (widthSizeClass == WindowWidthSizeClass.Compact) {
+            // ==========================================
+            // COMPACT PHONE PORTRAIT LAYOUT
+            // ==========================================
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                // Segmented Button for View Toggle
+                item {
+                    val options = listOf("Daily Gauges", "Weekly Trend")
+                    SingleChoiceSegmentedButtonRow(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        options.forEachIndexed { idx, label ->
+                            SegmentedButton(
+                                shape = SegmentedButtonDefaults.itemShape(index = idx, count = options.size),
+                                onClick = { dashboardModeIndex = idx },
+                                selected = idx == dashboardModeIndex
                             ) {
-                                MacroCanvasDashboard(
-                                    totalCalories = totalCalories,
-                                    calorieGoal = calorieGoal,
-                                    totalProtein = totalProtein,
-                                    proteinGoal = proteinGoal,
-                                    totalCarbs = totalCarbs,
-                                    carbsGoal = carbsGoal,
-                                    totalFats = totalFats,
-                                    fatsGoal = fatsGoal
+                                Text(label, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+
+                // Render Sections sequentially based on ordered sections preferences
+                dashboardSections.forEach { sectionId ->
+                    when (sectionId) {
+                        "macro_gauges" -> {
+                            if (dashboardModeIndex == 0) {
+                                item(key = "macro_gauges") {
+                                    ReorderableSectionWrapper(
+                                        sectionId = "macro_gauges",
+                                        title = "Macro Gauges",
+                                        viewModel = viewModel,
+                                        sectionOrder = dashboardSections
+                                    ) {
+                                        MacroCanvasDashboard(
+                                            totalCalories = totalCalories,
+                                            calorieGoal = calorieGoal,
+                                            totalProtein = totalProtein,
+                                            proteinGoal = proteinGoal,
+                                            totalCarbs = totalCarbs,
+                                            carbsGoal = carbsGoal,
+                                            totalFats = totalFats,
+                                            fatsGoal = fatsGoal
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        "weekly_summary" -> {
+                            if (dashboardModeIndex == 1) {
+                                item(key = "weekly_summary") {
+                                    ReorderableSectionWrapper(
+                                        sectionId = "weekly_summary",
+                                        title = "Weekly Summary",
+                                        viewModel = viewModel,
+                                        sectionOrder = dashboardSections
+                                    ) {
+                                        WeeklySummarySection(
+                                            weeklyCalories = weeklyCalories,
+                                            calorieGoal = calorieGoal,
+                                            days = days,
+                                            todayActiveCalories = todayActiveCalories,
+                                            onTrendsClick = { navController.navigate("summary") }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        "companion_sync" -> {
+                            item(key = "companion_sync") {
+                                ReorderableSectionWrapper(
+                                    sectionId = "companion_sync",
+                                    title = "Companion Sync",
+                                    viewModel = viewModel,
+                                    sectionOrder = dashboardSections
+                                ) {
+                                    CompanionSyncSection(
+                                        viewModel = viewModel,
+                                        todayActiveCalories = todayActiveCalories
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Meal shortcuts quick logger
+                item {
+                    MealShortcutsPanel(navController = navController)
+                }
+
+                // Logs list header with filter chips
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Today's logs",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "${filteredEntries.size} items",
+                                fontSize = 12.sp,
+                                color = GrayText
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            listOf("All", "High Protein", "High Carbs", "High Fats").forEach { filter ->
+                                val selected = activeMacroFilter == filter
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { activeMacroFilter = filter },
+                                    label = { Text(filter, fontSize = 11.sp) },
+                                    leadingIcon = if (selected) {
+                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp)) }
+                                    } else null
                                 )
                             }
                         }
                     }
-                    "weekly_summary" -> {
-                        item(key = "weekly_summary") {
-                            ReorderableSectionWrapper(
-                                sectionId = "weekly_summary",
-                                title = "Weekly Summary",
-                                viewModel = viewModel,
-                                sectionOrder = dashboardSections
-                            ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    // Weekly Trends CTA Card
-                                    Card(
-                                        onClick = { navController.navigate("summary") },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .testTag("weekly_summary_card_button"),
-                                        shape = RoundedCornerShape(16.dp),
-                                        colors = CardDefaults.cardColors(containerColor = CardDark)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(16.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(40.dp)
-                                                        .clip(CircleShape)
-                                                        .background(SoftLime.copy(alpha = 0.15f)),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.DateRange,
-                                                        contentDescription = null,
-                                                        tint = SoftLime,
-                                                        modifier = Modifier.size(20.dp)
-                                                    )
-                                                }
-                                                Spacer(modifier = Modifier.width(12.dp))
-                                                Column {
-                                                    Text(
-                                                        text = "Weekly Summary & Trends",
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = Color.White,
-                                                        fontSize = 14.sp
-                                                    )
-                                                    Text(
-                                                        text = "Visualize calories & macronutrient logs",
-                                                        color = GrayText,
-                                                        fontSize = 11.sp
-                                                    )
-                                                }
-                                            }
-                                            Icon(
-                                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                                contentDescription = null,
-                                                tint = SoftLime
-                                            )
-                                        }
-                                    }
+                }
 
-                                    // Vico 7-day Analytics Card
-                                    Card(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .testTag("weekly_trends_chart_card"),
-                                        shape = RoundedCornerShape(16.dp),
-                                        colors = CardDefaults.cardColors(containerColor = CardDark)
-                                    ) {
-                                        Column(modifier = Modifier.padding(16.dp)) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Column {
-                                                    Text(
-                                                        text = "7-Day Calories Analytics",
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = Color.White,
-                                                        fontSize = 14.sp
-                                                    )
-                                                    Text(
-                                                        text = "Daily Intake vs Goal (Vico)",
-                                                        color = GrayText,
-                                                        fontSize = 11.sp
-                                                    )
-                                                }
-                                                // Active Calories burn count chip
-                                                Box(
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .background(SoftLime.copy(alpha = 0.15f))
-                                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                                ) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Favorite,
-                                                            contentDescription = null,
-                                                            tint = SoftLime,
-                                                            modifier = Modifier.size(12.dp)
-                                                        )
-                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                        Text(
-                                                            text = "+${todayActiveCalories.toInt()} kcal",
-                                                            color = SoftLime,
-                                                            fontSize = 10.sp,
-                                                            fontWeight = FontWeight.Bold
-                                                        )
-                                                    }
-                                                }
-                                            }
-
-                                            Spacer(modifier = Modifier.height(12.dp))
-
-                                            val chartEntryModel = remember(weeklyCalories, calorieGoal) {
-                                                val entries1 = weeklyCalories.mapIndexed { idx, value ->
-                                                    com.patrykandpatrick.vico.core.entry.FloatEntry(idx.toFloat(), value)
-                                                }
-                                                val entries2 = List(7) { idx ->
-                                                    com.patrykandpatrick.vico.core.entry.FloatEntry(idx.toFloat(), calorieGoal.toFloat())
-                                                }
-                                                entryModelOf(entries1, entries2)
-                                            }
-
-                                            val bottomAxisFormatter = remember(days) {
-                                                AxisValueFormatter<AxisPosition.Horizontal.Bottom> { value, _ ->
-                                                    days.getOrNull(value.toInt()) ?: ""
-                                                }
-                                            }
-
-                                            Chart(
-                                                chart = lineChart(),
-                                                model = chartEntryModel,
-                                                startAxis = rememberStartAxis(),
-                                                bottomAxis = rememberBottomAxis(
-                                                    valueFormatter = bottomAxisFormatter
-                                                ),
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(160.dp)
-                                            )
-                                            
-                                            Spacer(modifier = Modifier.height(10.dp))
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF4ADE80)))
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Intake", color = GrayText, fontSize = 10.sp)
-                                                }
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFFEF4444)))
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Goal Target", color = GrayText, fontSize = 10.sp)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                // Logs items
+                if (filteredEntries.isEmpty()) {
+                    item {
+                        EmptyLogsPlaceholder()
+                    }
+                } else {
+                    itemsIndexed(filteredEntries, key = { _, entry -> entry.id }) { index, entry ->
+                        var isVisible by remember { mutableStateOf(false) }
+                        LaunchedEffect(entry.id) {
+                            delay(index * 30L)
+                            isVisible = true
                         }
-                    }
-                    "companion_sync" -> {
-                        item(key = "companion_sync") {
-                            val todayActiveCaloriesVal by viewModel.todayActiveCalories.collectAsState()
-                            val todayExerciseSessions by viewModel.todayExerciseSessions.collectAsState()
-                            val isSyncing by viewModel.isSyncing.collectAsState()
-                            val isOfflineMode by viewModel.isOfflineMode.collectAsState()
-
-                            ReorderableSectionWrapper(
-                                sectionId = "companion_sync",
-                                title = "Companion Sync Center",
-                                viewModel = viewModel,
-                                sectionOrder = dashboardSections
-                            ) {
-                                Card(
-                                    modifier = Modifier.fillMaxWidth().testTag("health_connect_sync_panel"),
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(containerColor = CardDark),
-                                    border = BorderStroke(1.dp, SoftLime.copy(alpha = if (isOfflineMode) 0.05f else 0.15f))
-                                ) {
-                                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Favorite,
-                                                    contentDescription = null,
-                                                    tint = SoftLime,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text(
-                                                    text = "Companion Sync Center",
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 13.sp
-                                                )
-                                            }
-                                            
-                                            // Offline/Online Indicator
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .background(if (isOfflineMode) Color(0xFF7F1D1D) else HealthyGreen.copy(alpha = 0.15f))
-                                                    .clickable { viewModel.toggleOfflineMode() }
-                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                                                    .testTag("offline_toggle_pill")
-                                            ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(6.dp)
-                                                        .clip(CircleShape)
-                                                        .background(if (isOfflineMode) Color.Red else SoftLime)
-                                                )
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = if (isOfflineMode) "Offline Mode" else "Online Syncing",
-                                                    color = if (isOfflineMode) Color.White else SoftLime,
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
-                                        }
-                                        
-                                        Text(
-                                            text = "Daily exercise and calorie bonus logs tracked via Health Connect client integrations.",
-                                            color = GrayText,
-                                            fontSize = 11.sp
-                                        )
-                                        
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Column {
-                                                Text(
-                                                    text = "Today's Active Burn Bonus:",
-                                                    color = GrayText,
-                                                    fontSize = 11.sp
-                                                )
-                                                Text(
-                                                    text = "+${todayActiveCaloriesVal.toInt()} kcal",
-                                                    color = SoftLime,
-                                                    fontSize = 16.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
-                                            
-                                            Button(
-                                                onClick = { viewModel.loadActiveCalories() },
-                                                colors = ButtonDefaults.buttonColors(containerColor = if (isSyncing) CardDark else SoftLime),
-                                                border = BorderStroke(1.dp, SoftLime.copy(alpha = 0.3f)),
-                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                                modifier = Modifier.height(28.dp).testTag("trigger_health_connect_sync")
-                                            ) {
-                                                if (isSyncing) {
-                                                    CircularProgressIndicator(color = SoftLime, strokeWidth = 1.5.dp, modifier = Modifier.size(12.dp))
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Syncing...", color = SoftLime, fontSize = 10.sp)
-                                                } else {
-                                                    Icon(imageVector = Icons.Default.Sync, contentDescription = "Sync", tint = SlateBg, modifier = Modifier.size(12.dp))
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Sync Wearables", color = SlateBg, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                        }
-                                        
-                                        // Render Synced Exercise sessions
-                                        if (todayExerciseSessions.isNotEmpty()) {
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = "Synced Wearable Workouts:",
-                                                color = Color.White,
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 11.sp
-                                            )
-                                            todayExerciseSessions.forEach { session ->
-                                                Row(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .background(SlateBg.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                                                        .padding(8.dp),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = SoftLime, modifier = Modifier.size(12.dp))
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        Text(text = session.title, color = Color.White, fontSize = 11.sp)
-                                                    }
-                                                    Text(
-                                                        text = "${session.durationMinutes}m | ~${session.caloriesBurned.toInt()} kcal",
-                                                        color = SoftLime,
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.SemiBold
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Meal Quick Entry Logging Channels
-            item {
-                MealShortcutsPanel(navController = navController)
-            }
-
-            // Header for Logged Foods list
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Today's logs",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = Color.White
-                    )
-                    Text(
-                        text = "${entries.size} items",
-                        fontSize = 12.sp,
-                        color = GrayText
-                    )
-                }
-            }
-
-            // Food Log Entries List
-            if (entries.isEmpty()) {
-                item {
-                    EmptyLogsPlaceholder()
-                }
-            } else {
-                itemsIndexed(entries, key = { _, entry -> entry.id }) { index, entry ->
-                    var isVisible by remember { mutableStateOf(false) }
-                    LaunchedEffect(entry.id) {
-                        delay(index * 60L) // Staggered delay for each item
-                        isVisible = true
-                    }
-                    AnimatedVisibility(
-                        visible = isVisible,
-                        enter = fadeIn(animationSpec = tween(350)) + slideInVertically(
-                            initialOffsetY = { 30 },
-                            animationSpec = tween(350, easing = EaseOutBack)
-                        ),
-                        exit = fadeOut(animationSpec = tween(200)) + slideOutVertically(
-                            targetOffsetY = { -30 },
-                            animationSpec = tween(200)
-                        )
-                    ) {
-                        FoodEntryRow(
-                            entry = entry,
-                            onDelete = { viewModel.deleteEntry(entry) }
-                        )
-                    }
-                }
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(32.dp))
-            }
-        }
-    }
-
-    // Aura Health Coach Dialog
-    if (showChatDialog) {
-        Dialog(onDismissRequest = { showChatDialog = false }) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.85f)
-                    .padding(vertical = 16.dp)
-                    .geminiGlowBorder(borderWidth = 1.5.dp, cornerRadius = 24.dp),
-                shape = RoundedCornerShape(24.dp),
-                color = CardDark.copy(alpha = 0.94f)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp)
-                ) {
-                    // Header
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = null,
-                                tint = SoftLime,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                "AURA AI NUTRITION COACH",
-                                fontWeight = FontWeight.ExtraBold,
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified
-                            )
-                        }
-                        IconButton(
-                            onClick = { showChatDialog = false },
-                            modifier = Modifier
-                                .background(Color.White.copy(alpha = 0.08f), CircleShape)
-                                .size(28.dp)
+                        AnimatedVisibility(
+                            visible = isVisible,
+                            enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessLow)) + slideInVertically(
+                                initialOffsetY = { 24 },
+                                animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy)
+                            ),
+                            exit = fadeOut() + slideOutVertically()
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Close",
-                                tint = Color.White.copy(alpha = 0.8f),
-                                modifier = Modifier.size(14.dp)
+                            FoodEntryRow(
+                                entry = entry,
+                                onDelete = { viewModel.deleteEntry(entry) },
+                                onClick = { navController.navigate("food_detail/${entry.id}") },
+                                sharedTransitionScope = sharedTransitionScope,
+                                animatedVisibilityScope = animatedVisibilityScope
                             )
                         }
                     }
-                    
-                    Text(
-                        "Health Connect Workouts today: +${todayActiveCalories.toInt()} kcal",
-                        fontSize = 11.sp,
-                        color = SoftLime,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    
-                    HorizontalDivider(color = SlateBg, thickness = 1.dp)
-                    
-                    // Message List
-                    val listState = rememberLazyListState()
-                    LaunchedEffect(chatMessages.size) {
-                        if (chatMessages.isNotEmpty()) {
-                            listState.animateScrollToItem(chatMessages.size - 1)
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(32.dp))
+                }
+            }
+        } else {
+            // ==========================================
+            // TABLET / FOLDABLE TWO-PANE LAYOUT
+            // ==========================================
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                // Left Column: Main Dashboard Controls & Lists
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1.1f)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    item {
+                        val options = listOf("Daily Gauges", "Weekly Trend")
+                        SingleChoiceSegmentedButtonRow(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            options.forEachIndexed { idx, label ->
+                                SegmentedButton(
+                                    shape = SegmentedButtonDefaults.itemShape(index = idx, count = options.size),
+                                    onClick = { dashboardModeIndex = idx },
+                                    selected = idx == dashboardModeIndex
+                                ) {
+                                    Text(label, fontSize = 11.sp)
+                                }
+                            }
                         }
                     }
-                    
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(chatMessages) { msg ->
-                            val isUser = msg.sender == "user"
+
+                    if (dashboardModeIndex == 0) {
+                        item(key = "macro_gauges_tablet") {
+                            MacroCanvasDashboard(
+                                totalCalories = totalCalories,
+                                calorieGoal = calorieGoal,
+                                totalProtein = totalProtein,
+                                proteinGoal = proteinGoal,
+                                totalCarbs = totalCarbs,
+                                carbsGoal = carbsGoal,
+                                totalFats = totalFats,
+                                fatsGoal = fatsGoal
+                            )
+                        }
+                    } else {
+                        item(key = "weekly_summary_tablet") {
+                            WeeklySummarySection(
+                                weeklyCalories = weeklyCalories,
+                                calorieGoal = calorieGoal,
+                                days = days,
+                                todayActiveCalories = todayActiveCalories,
+                                onTrendsClick = { navController.navigate("summary") }
+                            )
+                        }
+                    }
+
+                    item {
+                        CompanionSyncSection(
+                            viewModel = viewModel,
+                            todayActiveCalories = todayActiveCalories
+                        )
+                    }
+
+                    item {
+                        MealShortcutsPanel(navController = navController)
+                    }
+
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Card(
-                                    shape = RoundedCornerShape(
-                                        topStart = 16.dp,
-                                        topEnd = 16.dp,
-                                        bottomStart = if (isUser) 16.dp else 4.dp,
-                                        bottomEnd = if (isUser) 4.dp else 16.dp
-                                    ),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (isUser) SlateBg else Color(0xFF1E293B)
-                                    ),
-                                    border = if (!isUser) BorderStroke(1.dp, SoftLime.copy(alpha = 0.3f)) else null,
-                                    modifier = Modifier.widthIn(max = 240.dp)
-                                ) {
-                                    Column(modifier = Modifier.padding(12.dp)) {
-                                        Text(
-                                            text = msg.text,
-                                            color = Color.White,
-                                            fontSize = 13.sp
-                                        )
-                                    }
-                                }
+                                Text(
+                                    text = "Today's logs",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "${filteredEntries.size} items",
+                                    fontSize = 12.sp,
+                                    color = GrayText
+                                )
                             }
-                        }
-                        if (isAiThinking) {
-                            item {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.Start
-                                ) {
-                                    Card(
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                                        modifier = Modifier.padding(4.dp)
-                                    ) {
-                                        Text(
-                                            "Coach is reviewing macros...",
-                                            color = SoftLime,
-                                            fontSize = 11.sp,
-                                            modifier = Modifier.padding(8.dp)
-                                        )
-                                    }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                listOf("All", "High Protein", "High Carbs", "High Fats").forEach { filter ->
+                                    val selected = activeMacroFilter == filter
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = { activeMacroFilter = filter },
+                                        label = { Text(filter, fontSize = 11.sp) },
+                                        leadingIcon = if (selected) {
+                                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp)) }
+                                        } else null
+                                    )
                                 }
                             }
                         }
                     }
-                    
-                    // Animated Gemini Waves
-                    GeminiWaves(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        isThinking = isAiThinking
-                    )
-                    
-                    // Input Bar
-                    var messageText by remember { mutableStateOf("") }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextField(
-                            value = messageText,
-                            onValueChange = { messageText = it },
-                            placeholder = { Text("Ask Coach about workout macros...", color = GrayText, fontSize = 12.sp) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp)),
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = SlateBg,
-                                unfocusedContainerColor = SlateBg,
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent
-                            ),
-                            maxLines = 3
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
-                            onClick = {
-                                if (messageText.isNotBlank()) {
-                                    viewModel.sendMessageToAI(messageText.trim())
-                                    messageText = ""
-                                }
+
+                    if (filteredEntries.isEmpty()) {
+                        item {
+                            EmptyLogsPlaceholder()
+                        }
+                    } else {
+                        itemsIndexed(filteredEntries, key = { _, entry -> entry.id }) { index, entry ->
+                            var isVisible by remember { mutableStateOf(false) }
+                            LaunchedEffect(entry.id) {
+                                delay(index * 30L)
+                                isVisible = true
+                            }
+                            AnimatedVisibility(
+                                visible = isVisible,
+                                enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessLow)) + slideInVertically(
+                                    initialOffsetY = { 24 },
+                                    animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy)
+                                ),
+                                exit = fadeOut() + slideOutVertically()
+                            ) {
+                                FoodEntryRow(
+                                    entry = entry,
+                                    onDelete = {
+                                        viewModel.deleteEntry(entry)
+                                        if (selectedEntryId == entry.id) {
+                                            selectedEntryId = null
+                                        }
+                                    },
+                                    onClick = { selectedEntryId = entry.id },
+                                    sharedTransitionScope = sharedTransitionScope,
+                                    animatedVisibilityScope = animatedVisibilityScope
+                                )
+                            }
+                        }
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(32.dp))
+                    }
+                }
+
+                // Right Column: Embedded Detailed Panel (Two-Pane list-detail)
+                Card(
+                    modifier = Modifier
+                        .weight(0.9f)
+                        .fillMaxHeight()
+                        .padding(bottom = 16.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = CardDark),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                ) {
+                    val selectedEntry = remember(filteredEntries, selectedEntryId) {
+                        filteredEntries.find { it.id == selectedEntryId }
+                    }
+
+                    if (selectedEntry != null) {
+                        FoodDetailContent(
+                            entry = selectedEntry,
+                            onDelete = {
+                                viewModel.deleteEntry(selectedEntry)
+                                selectedEntryId = null
                             },
-                            enabled = messageText.isNotBlank() && !isAiThinking,
                             modifier = Modifier
-                                .background(if (messageText.isNotBlank()) SoftLime else Color.Gray, CircleShape)
-                                .size(44.dp)
+                                .fillMaxSize()
+                                .padding(24.dp)
+                                .verticalScroll(rememberScrollState())
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Send",
-                                tint = SlateBg,
-                                modifier = Modifier.size(18.dp)
-                            )
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = GrayText.copy(alpha = 0.4f),
+                                    modifier = Modifier.size(40.dp)
+                                )
+                                Text(
+                                    text = "Select a food log entry",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                                Text(
+                                    text = "Click on any log on the left to see details.",
+                                    color = GrayText,
+                                    fontSize = 12.sp
+                                )
+                            }
                         }
                     }
                 }
@@ -870,7 +666,6 @@ fun DashboardScreen(
         }
     }
 
-    // Goal Editing Dialog
     if (showGoalDialog) {
         val themeMode by viewModel.themeMode.collectAsState()
         val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsState()
@@ -939,7 +734,6 @@ fun MacroCanvasDashboard(
                 .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Concentric Progress Canvas
             Box(
                 modifier = Modifier
                     .size(130.dp)
@@ -954,7 +748,6 @@ fun MacroCanvasDashboard(
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val strokeWidth = 10.dp.toPx()
                     
-                    // Track 1: Calories (Outer Ring)
                     drawArc(
                         color = Color.White.copy(alpha = 0.08f),
                         startAngle = 0f,
@@ -970,7 +763,6 @@ fun MacroCanvasDashboard(
                         style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                     )
 
-                    // Track 2: Protein (Middle Ring)
                     val pRadius = size.minDimension / 2 - strokeWidth - 6.dp.toPx()
                     drawArc(
                         color = Color.White.copy(alpha = 0.08f),
@@ -991,7 +783,6 @@ fun MacroCanvasDashboard(
                         size = androidx.compose.ui.geometry.Size(pRadius * 2, pRadius * 2)
                     )
 
-                    // Track 3: Carbs + Fats (Inner Ring Composite or just Carbs for simpler clean radial view)
                     val cRadius = size.minDimension / 2 - (strokeWidth * 2) - 12.dp.toPx()
                     drawArc(
                         color = Color.White.copy(alpha = 0.08f),
@@ -1013,7 +804,6 @@ fun MacroCanvasDashboard(
                     )
                 }
 
-                // Inner Stats Label
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = "${animatedCalCount.toInt()}",
@@ -1031,7 +821,6 @@ fun MacroCanvasDashboard(
 
             Spacer(modifier = Modifier.width(20.dp))
 
-            // Text detailed list of Macros
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -1177,10 +966,14 @@ fun MealShortcutsPanel(navController: NavController) {
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun FoodEntryRow(
     entry: FoodEntry,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onClick: () -> Unit,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -1189,75 +982,85 @@ fun FoodEntryRow(
         animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy)
     )
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(animatedScale)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = {}
-            )
-            .testTag("food_entry_row_${entry.id}"),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = if (isPressed) CardDark.copy(alpha = 0.8f) else CardDark),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = if (isPressed) 0.08f else 0.03f))
-    ) {
-        Row(
+    with(sharedTransitionScope) {
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .scale(animatedScale)
+                .sharedElement(
+                    rememberSharedContentState(key = "food_card_${entry.id}"),
+                    animatedVisibilityScope = animatedVisibilityScope
+                )
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick
+                )
+                .testTag("food_entry_row_${entry.id}"),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = if (isPressed) CardDark.copy(alpha = 0.8f) else CardDark),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = if (isPressed) 0.08f else 0.03f))
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = entry.name,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
-                Text(
-                    text = "${entry.mealType.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }} • ${entry.servingSize} ${entry.servingUnit}",
-                    color = GrayText,
-                    fontSize = 11.sp
-                )
-                if (entry.locationName != null) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = SoftLime, modifier = Modifier.size(10.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(entry.locationName, color = SoftLime, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = entry.name,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        modifier = Modifier.sharedElement(
+                            rememberSharedContentState(key = "food_name_${entry.id}"),
+                            animatedVisibilityScope = animatedVisibilityScope
+                        )
+                    )
+                    Text(
+                        text = "${entry.mealType.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }} • ${entry.servingSize} ${entry.servingUnit}",
+                        color = GrayText,
+                        fontSize = 11.sp
+                    )
+                    if (entry.locationName != null) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.LocationOn, contentDescription = null, tint = SoftLime, modifier = Modifier.size(10.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(entry.locationName, color = SoftLime, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MacroPill(label = "P: ${entry.protein.toInt()}g", color = ProteinOrange)
+                        MacroPill(label = "C: ${entry.carbs.toInt()}g", color = CarbYellow)
+                        MacroPill(label = "F: ${entry.fats.toInt()}g", color = FatBlue)
                     }
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MacroPill(label = "P: ${entry.protein.toInt()}g", color = ProteinOrange)
-                    MacroPill(label = "C: ${entry.carbs.toInt()}g", color = CarbYellow)
-                    MacroPill(label = "F: ${entry.fats.toInt()}g", color = FatBlue)
-                }
-            }
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = "${entry.calories.toInt()} kcal",
-                    color = SoftLime,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier
-                        .size(24.dp)
-                        .testTag("delete_button_${entry.id}")
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Remove entry",
-                        tint = Color.Red.copy(alpha = 0.6f),
-                        modifier = Modifier.size(16.dp)
+                    Text(
+                        text = "${entry.calories.toInt()} kcal",
+                        color = SoftLime,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
                     )
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .testTag("delete_button_${entry.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Remove entry",
+                            tint = Color.Red.copy(alpha = 0.6f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
         }
@@ -1550,21 +1353,18 @@ fun ReorderableSectionWrapper(
     val index = sectionOrder.indexOf(sectionId)
     val totalSections = sectionOrder.size
     
-    // Scale up to 1.05x when dragging
     val scale by animateFloatAsState(
         targetValue = if (isDragging) 1.05f else 1.0f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
         label = "scale"
     )
 
-    // Animated lift elevation shadow
     val elevation by animateDpAsState(
         targetValue = if (isDragging) 12.dp else 0.dp,
         animationSpec = spring(stiffness = Spring.StiffnessMedium),
         label = "elevation"
     )
 
-    // Measure height to draw the perfect ghost outline/placeholder card
     val measuredHeight = remember { mutableStateOf(0) }
     val density = LocalDensity.current
 
@@ -1577,7 +1377,6 @@ fun ReorderableSectionWrapper(
                 }
             }
     ) {
-        // 1. Ghost / Placeholder outline at the stationary resting position
         if (isDragging && measuredHeight.value > 0) {
             Box(
                 modifier = Modifier
@@ -1594,7 +1393,6 @@ fun ReorderableSectionWrapper(
             )
         }
 
-        // 2. Dragged Card containing the control bar and actual section content
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1607,7 +1405,6 @@ fun ReorderableSectionWrapper(
                     color = if (isDragging) SoftLime.copy(alpha = 0.8f) else Color.Transparent,
                     shape = RoundedCornerShape(16.dp)
                 )
-                // Long press on ANY area of the card triggers reordering!
                 .pointerInput(sectionId, index) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = {
@@ -1618,23 +1415,22 @@ fun ReorderableSectionWrapper(
                             change.consume()
                             offsetY += dragAmount.y
                             
-                            // Direct interactive swap trigger!
                             val swapThreshold = 220f
                             if (offsetY > swapThreshold && index < totalSections - 1) {
                                 viewModel.moveSectionDown(sectionId, commit = false)
-                                offsetY -= swapThreshold // Compensate shift
+                                offsetY -= swapThreshold
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
                             else if (offsetY < -swapThreshold && index > 0) {
                                 viewModel.moveSectionUp(sectionId, commit = false)
-                                offsetY += swapThreshold // Compensate shift
+                                offsetY += swapThreshold
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
                         },
                         onDragEnd = {
                             isDragging = false
                             offsetY = 0f
-                            viewModel.commitSectionOrder() // Saved to preferences on releases/drag-end!
+                            viewModel.commitSectionOrder()
                         },
                         onDragCancel = {
                             isDragging = false
@@ -1651,7 +1447,6 @@ fun ReorderableSectionWrapper(
                     .fillMaxWidth()
                     .padding(bottom = 6.dp)
             ) {
-                // Reorder Control Bar at the top
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1659,7 +1454,6 @@ fun ReorderableSectionWrapper(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Left: Drag Handle Icon and Title
                     Row(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1689,7 +1483,6 @@ fun ReorderableSectionWrapper(
                     }
                 }
                 
-                // Actual card/content of the section
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1706,3 +1499,172 @@ fun ReorderableSectionWrapper(
         }
     }
 }
+
+@Composable
+fun WeeklySummarySection(
+    weeklyCalories: List<Float>,
+    calorieGoal: Double,
+    days: List<String>,
+    todayActiveCalories: Double,
+    onTrendsClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onTrendsClick() }
+            .testTag("weekly_summary_card"),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = CardDark),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.03f))
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Weekly Calorie Trend",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                    Text(
+                        text = "Average daily intake: ${weeklyCalories.average().toInt()} kcal",
+                        color = GrayText,
+                        fontSize = 12.sp
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = "View details",
+                    tint = SoftLime,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            if (weeklyCalories.isNotEmpty()) {
+                val chartEntryModel = remember(weeklyCalories) {
+                    entryModelOf(*weeklyCalories.map { it as Number }.toTypedArray())
+                }
+                
+                val bottomAxisValueFormatter = AxisValueFormatter<AxisPosition.Horizontal.Bottom> { value: Float, _ ->
+                    days.getOrNull(value.toInt()) ?: ""
+                }
+
+                Chart(
+                    chart = lineChart(),
+                    model = chartEntryModel,
+                    startAxis = rememberStartAxis(),
+                    bottomAxis = rememberBottomAxis(
+                        valueFormatter = bottomAxisValueFormatter
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CompanionSyncSection(
+    viewModel: NutritionViewModel,
+    todayActiveCalories: Double
+) {
+    val isOffline by viewModel.isOfflineMode.collectAsState()
+    val isSyncing by viewModel.isSyncing.collectAsState()
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("companion_sync_card"),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = CardDark),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.03f))
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Companion Sync Status",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                    Text(
+                        text = if (isOffline) "Running in Local Offline Mode" else "Connected to Cloud Sync",
+                        color = GrayText,
+                        fontSize = 12.sp
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .background(
+                            color = if (isSyncing) Color.Yellow else if (isOffline) Color.Gray else HealthyGreen,
+                            shape = CircleShape
+                        )
+                )
+            }
+
+            if (isSyncing) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Syncing logs to database...", color = SoftLime, fontSize = 11.sp)
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape),
+                        color = SoftLime,
+                        trackColor = Color.White.copy(alpha = 0.05f)
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Offline Mode",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Switch(
+                    checked = isOffline,
+                    onCheckedChange = { viewModel.toggleOfflineMode() },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = SlateBg,
+                        checkedTrackColor = SoftLime,
+                        uncheckedThumbColor = Color.Gray,
+                        uncheckedTrackColor = CardDark.copy(alpha = 0.5f)
+                    ),
+                    modifier = Modifier.testTag("offline_mode_switch")
+                )
+            }
+
+            if (!isOffline && !isSyncing) {
+                Button(
+                    onClick = { viewModel.syncCachedLocalEntries() },
+                    colors = ButtonDefaults.buttonColors(containerColor = SoftLime),
+                    modifier = Modifier.fillMaxWidth().height(36.dp).testTag("sync_button")
+                ) {
+                    Text("Sync Now", color = SlateBg, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
