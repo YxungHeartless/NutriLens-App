@@ -4,13 +4,21 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CameraCharacteristics
+import android.content.pm.PackageManager
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageProxy
 import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,11 +33,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -46,10 +56,16 @@ import com.example.domain.model.MealType
 import com.example.ui.components.*
 import com.example.ui.viewmodel.CameraAnalysisState
 import com.example.ui.viewmodel.NutritionViewModel
+import com.example.ui.viewmodel.AiScannerViewModel
+import com.example.ui.viewmodel.AiScanState
+import com.example.data.database.SubscriptionTier
+import org.koin.androidx.compose.koinViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import com.google.accompanist.permissions.PermissionStatus
+import com.google.accompanist.permissions.shouldShowRationale
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executor
 
@@ -58,17 +74,29 @@ import java.util.concurrent.Executor
 fun LogFoodScreen(
     navController: NavController,
     viewModel: NutritionViewModel,
-    mealTypeString: String
+    mealTypeString: String,
+    aiScannerViewModel: AiScannerViewModel = koinViewModel()
 ) {
     val mealType = MealType.fromString(mealTypeString)
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
+    val localSoftLime = SoftLime
+    val localSlateBg = SlateBg
+    val localHealthyGreen = HealthyGreen
+    val localGrayText = GrayText
+
     val cameraPermissionState = rememberPermissionState(
         android.Manifest.permission.CAMERA
     )
+    var hasRequestedPermission by rememberSaveable { mutableStateOf(false) }
+    val shouldShowRationale = (cameraPermissionState.status as? PermissionStatus.Denied)?.shouldShowRationale == true
 
     val analysisState by viewModel.cameraAnalysisState.collectAsState()
+    val aiScanState by aiScannerViewModel.scanState.collectAsState()
+
+    val subscriptionTier by viewModel.premiumManager.subscriptionTier.collectAsState()
+    val hasUltraAccess = subscriptionTier == SubscriptionTier.ULTRA
 
     // Holds capture thumbnail preview locally
     var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -82,6 +110,14 @@ fun LogFoodScreen(
     var customFats by remember { mutableStateOf("") }
     var customServingSize by remember { mutableStateOf("") }
     var customServingUnit by remember { mutableStateOf("") }
+
+    var showManualInputDialog by remember { mutableStateOf(false) }
+    var manualFoodName by remember { mutableStateOf("") }
+    var manualCalories by remember { mutableStateOf("") }
+    var manualProtein by remember { mutableStateOf("") }
+    var manualCarbs by remember { mutableStateOf("") }
+    var manualFats by remember { mutableStateOf("") }
+    var manualPortionSize by remember { mutableStateOf("1.0") }
 
     val coroutineScope = rememberCoroutineScope()
     var isFetchingLocation by remember { mutableStateOf(false) }
@@ -115,11 +151,81 @@ fun LogFoodScreen(
         }
     }
 
+    // Bind current details on AI visual scanner success
+    LaunchedEffect(aiScanState) {
+        val resState = aiScanState
+        if (resState is AiScanState.Success) {
+            val res = resState.result
+            customFoodName = res.name
+            customCalories = res.calories.toInt().toString()
+            customProtein = res.protein.toInt().toString()
+            customCarbs = res.carbs.toInt().toString()
+            customFats = res.fat.toInt().toString()
+            customServingSize = "1.0"
+            customServingUnit = "serving"
+            showEditSheet = true
+            // Reset location state for new item
+            fetchedLocationName = null
+            fetchedLatitude = null
+            fetchedLongitude = null
+        }
+    }
+
+    // Probe camera hardware availability
+    val cameraManager = remember { context.getSystemService(Context.CAMERA_SERVICE) as CameraManager }
+    val cameraIds = remember {
+        try {
+            cameraManager.cameraIdList.toList()
+        } catch (e: Exception) {
+            emptyList<String>()
+        }
+    }
+    val hasCameraFeature = remember {
+        context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
+    }
+
+    val resolvedCameraSelector = remember(cameraIds) {
+        var hasBack = false
+        var hasFront = false
+        for (id in cameraIds) {
+            try {
+                val characteristics = cameraManager.getCameraCharacteristics(id)
+                val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
+                if (facing == CameraCharacteristics.LENS_FACING_BACK) {
+                    hasBack = true
+                } else if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
+                    hasFront = true
+                }
+            } catch (e: Exception) {
+                Log.e("CameraRouting", "Error reading characteristics for camera $id", e)
+            }
+        }
+        when {
+            hasBack -> CameraSelector.DEFAULT_BACK_CAMERA
+            hasFront -> CameraSelector.DEFAULT_FRONT_CAMERA
+            else -> null
+        }
+    }
+
+    var isCameraHardwareAvailable by remember {
+        mutableStateOf(resolvedCameraSelector != null && hasCameraFeature && cameraIds.isNotEmpty())
+    }
+
     // Set up standard CameraX controller
-    val cameraController = remember {
-        LifecycleCameraController(context).apply {
-            setEnabledUseCases(LifecycleCameraController.IMAGE_CAPTURE)
-            cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+    val cameraController = remember(resolvedCameraSelector) {
+        if (resolvedCameraSelector != null && isCameraHardwareAvailable) {
+            try {
+                LifecycleCameraController(context).apply {
+                    setEnabledUseCases(LifecycleCameraController.IMAGE_CAPTURE)
+                    cameraSelector = resolvedCameraSelector
+                }
+            } catch (e: Exception) {
+                Log.e("CameraX", "Failed to initialize LifecycleCameraController", e)
+                isCameraHardwareAvailable = false
+                null
+            }
+        } else {
+            null
         }
     }
 
@@ -159,17 +265,204 @@ fun LogFoodScreen(
                 .padding(paddingValues)
         ) {
             if (cameraPermissionState.status.isGranted) {
-                // Active Camera Feed View Finder
-                AndroidView(
-                    factory = { ctx ->
-                        PreviewView(ctx).apply {
-                            controller = cameraController
+                if (!hasUltraAccess) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(SlateBg)
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Ultra Premium Feature",
+                            tint = SoftLime,
+                            modifier = Modifier
+                                .size(64.dp)
+                                .background(Color.White.copy(alpha = 0.05f), CircleShape)
+                                .padding(16.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "AI Fridge & Plate Scanner",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Unlock Ultra Tier to capture plate photos, detect hidden variables like cooking oils or dressings, and calculate macros instantly.",
+                            color = GrayText,
+                            fontSize = 13.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 24.dp)
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Button(
+                            onClick = { navController.navigate("paywall") },
+                            colors = ButtonDefaults.buttonColors(containerColor = SoftLime),
+                            modifier = Modifier.fillMaxWidth().height(50.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Upgrade to Ultra", color = SlateBg, fontWeight = FontWeight.Bold)
                         }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = { showManualInputDialog = true },
+                            border = BorderStroke(1.dp, SoftLime),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = SoftLime),
+                            modifier = Modifier.fillMaxWidth().height(50.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Enter Manually (Free)", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    if (isCameraHardwareAvailable && cameraController != null) {
+                        // Active Camera Feed View Finder
+                        AndroidView(
+                            factory = { ctx ->
+                                PreviewView(ctx).apply {
+                                    controller = cameraController
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        // Glassmorphic Virtual Camera Simulator
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(localSlateBg),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            // Shimmering ambient aura background
+                            var timeState by remember { mutableStateOf(0f) }
+                            LaunchedEffect(Unit) {
+                                val startTime = System.currentTimeMillis()
+                                while (true) {
+                                    timeState = (System.currentTimeMillis() - startTime) / 1000f
+                                    kotlinx.coroutines.delay(16)
+                                }
+                            }
+                            
+                            // High-tech flowing visual wave representation of sensor field
+                            GeminiFluidBackground(
+                                time = timeState,
+                                modifier = Modifier.fillMaxSize(),
+                                isDark = true
+                            )
+                            
+                            // Glassmorphic camera grid overlay
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(24.dp)
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .background(Color.White.copy(alpha = 0.03f))
+                                    .geminiGlowBorder(borderWidth = 1.5.dp, cornerRadius = 24.dp)
+                            ) {
+                                // Scanning grid lines and focus brackets
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val strokeColor = localSoftLime.copy(alpha = 0.25f)
+                                    val crispColor = localSoftLime
+                                    val sizeW = size.width
+                                    val sizeH = size.height
+                                    
+                                    // Vertical Thirds
+                                    drawLine(strokeColor, start = androidx.compose.ui.geometry.Offset(sizeW / 3f, 0f), end = androidx.compose.ui.geometry.Offset(sizeW / 3f, sizeH), strokeWidth = 1.dp.toPx())
+                                    drawLine(strokeColor, start = androidx.compose.ui.geometry.Offset(sizeW * 2 / 3f, 0f), end = androidx.compose.ui.geometry.Offset(sizeW * 2 / 3f, sizeH), strokeWidth = 1.dp.toPx())
+                                    
+                                    // Horizontal Thirds
+                                    drawLine(strokeColor, start = androidx.compose.ui.geometry.Offset(0f, sizeH / 3f), end = androidx.compose.ui.geometry.Offset(sizeW, sizeH / 3f), strokeWidth = 1.dp.toPx())
+                                    drawLine(strokeColor, start = androidx.compose.ui.geometry.Offset(0f, sizeH * 2 / 3f), end = androidx.compose.ui.geometry.Offset(sizeW, sizeH * 2 / 3f), strokeWidth = 1.dp.toPx())
+                                    
+                                    // Central Focus brackets
+                                    val center = androidx.compose.ui.geometry.Offset(sizeW / 2f, sizeH / 2f)
+                                    val bracketLength = 24.dp.toPx()
+                                    val bracketGap = 40.dp.toPx()
+                                    val bWidth = 2.dp.toPx()
+                                    
+                                    // Top Left Bracket
+                                    drawLine(crispColor, start = center + androidx.compose.ui.geometry.Offset(-bracketGap, -bracketGap), end = center + androidx.compose.ui.geometry.Offset(-bracketGap + bracketLength, -bracketGap), strokeWidth = bWidth)
+                                    drawLine(crispColor, start = center + androidx.compose.ui.geometry.Offset(-bracketGap, -bracketGap), end = center + androidx.compose.ui.geometry.Offset(-bracketGap, -bracketGap + bracketLength), strokeWidth = bWidth)
+                                    
+                                    // Top Right Bracket
+                                    drawLine(crispColor, start = center + androidx.compose.ui.geometry.Offset(bracketGap, -bracketGap), end = center + androidx.compose.ui.geometry.Offset(bracketGap - bracketLength, -bracketGap), strokeWidth = bWidth)
+                                    drawLine(crispColor, start = center + androidx.compose.ui.geometry.Offset(bracketGap, -bracketGap), end = center + androidx.compose.ui.geometry.Offset(bracketGap, -bracketGap + bracketLength), strokeWidth = bWidth)
+                                    
+                                    // Bottom Left Bracket
+                                    drawLine(crispColor, start = center + androidx.compose.ui.geometry.Offset(-bracketGap, bracketGap), end = center + androidx.compose.ui.geometry.Offset(-bracketGap + bracketLength, bracketGap), strokeWidth = bWidth)
+                                    drawLine(crispColor, start = center + androidx.compose.ui.geometry.Offset(-bracketGap, bracketGap), end = center + androidx.compose.ui.geometry.Offset(-bracketGap, bracketGap - bracketLength), strokeWidth = bWidth)
+                                    
+                                    // Bottom Right Bracket
+                                    drawLine(crispColor, start = center + androidx.compose.ui.geometry.Offset(bracketGap, bracketGap), end = center + androidx.compose.ui.geometry.Offset(bracketGap - bracketLength, bracketGap), strokeWidth = bWidth)
+                                    drawLine(crispColor, start = center + androidx.compose.ui.geometry.Offset(bracketGap, bracketGap), end = center + androidx.compose.ui.geometry.Offset(bracketGap, bracketGap - bracketLength), strokeWidth = bWidth)
+                                }
+                                
+                                // Moving laser scanning line
+                                val infiniteTransition = rememberInfiniteTransition(label = "scanning_laser")
+                                val scanProgress by infiniteTransition.animateFloat(
+                                    initialValue = 0.05f,
+                                    targetValue = 0.95f,
+                                    animationSpec = infiniteRepeatable(
+                                        animation = tween(durationMillis = 3000, easing = EaseInOutSine),
+                                        repeatMode = RepeatMode.Reverse
+                                    ),
+                                    label = "laser_y"
+                                )
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .fillMaxHeight(0.015f)
+                                        .align { sizeParent, sizeChild, _ ->
+                                            androidx.compose.ui.unit.IntOffset(0, (sizeParent.height * scanProgress).toInt())
+                                        }
+                                        .background(
+                                            Brush.verticalGradient(
+                                                colors = listOf(
+                                                    Color.Transparent,
+                                                    localSoftLime.copy(alpha = 0.7f),
+                                                    Color.Transparent
+                                                )
+                                            )
+                                        )
+                                )
+                                
+                                // Floating status telemetry text
+                                Column(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(16.dp)
+                                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                                        .padding(8.dp)
+                                ) {
+                                    Text("VIRTUAL SCANNER ACTIVE", color = localSoftLime, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text("ISO: 100 | RAW | AUTO-WHITE-BALANCE", color = Color.White.copy(alpha = 0.7f), fontSize = 9.sp)
+                                    Text("TRACKER STATE: ALIGNED", color = localHealthyGreen, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                                
+                                Icon(
+                                    imageVector = Icons.Default.FlipCameraAndroid,
+                                    contentDescription = "Simulated Camera",
+                                    tint = localSoftLime.copy(alpha = 0.5f),
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(16.dp)
+                                        .size(28.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             } else {
                 // Camera Permission Missing Placeholder
+                val isPermanentlyDenied = !cameraPermissionState.status.isGranted && 
+                        !cameraPermissionState.status.shouldShowRationale && 
+                        hasRequestedPermission
+
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -200,11 +493,53 @@ fun LogFoodScreen(
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                     Spacer(modifier = Modifier.height(24.dp))
-                    Button(
-                        onClick = { cameraPermissionState.launchPermissionRequest() },
-                        colors = ButtonDefaults.buttonColors(containerColor = SoftLime)
+                    if (isPermanentlyDenied) {
+                        Text(
+                            text = "Camera permission has been permanently denied. Please enable it in system settings to use the camera scanner.",
+                            color = Color.Red.copy(alpha = 0.8f),
+                            fontSize = 12.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = {
+                                try {
+                                    val intent = Intent(
+                                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                        Uri.fromParts("package", context.packageName, null)
+                                    ).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Log.e("SettingsDeepLink", "Failed to open settings", e)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = SoftLime)
+                        ) {
+                            Icon(Icons.Default.Settings, contentDescription = null, tint = SlateBg)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Open App Settings", color = SlateBg, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                hasRequestedPermission = true
+                                cameraPermissionState.launchPermissionRequest()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = SoftLime)
+                        ) {
+                            Text("Permit Camera Use", color = SlateBg, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = { showManualInputDialog = true },
+                        border = BorderStroke(1.5.dp, SoftLime),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = SoftLime)
                     ) {
-                        Text("Permit Camera Use", color = SlateBg, fontWeight = FontWeight.Bold)
+                        Text("Enter Manually", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -236,10 +571,13 @@ fun LogFoodScreen(
                 ) {
                     Button(
                         onClick = {
-                            // Mocking capture of Grilled Salmon Salad
-                            val dummyBitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
-                            capturedBitmap = dummyBitmap
-                            viewModel.analyzeFoodImage(dummyBitmap)
+                            if (!hasUltraAccess) {
+                                navController.navigate("paywall")
+                            } else {
+                                val dummyBitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+                                capturedBitmap = dummyBitmap
+                                aiScannerViewModel.scanFoodImage(dummyBitmap)
+                            }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = CardDark),
                         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
@@ -251,10 +589,13 @@ fun LogFoodScreen(
 
                     Button(
                         onClick = {
-                            // Mocking capture of Acai Bowl
-                            val dummyBitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
-                            capturedBitmap = dummyBitmap
-                            viewModel.analyzeFoodImage(dummyBitmap)
+                            if (!hasUltraAccess) {
+                                navController.navigate("paywall")
+                            } else {
+                                val dummyBitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+                                capturedBitmap = dummyBitmap
+                                aiScannerViewModel.scanFoodImage(dummyBitmap)
+                            }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = CardDark),
                         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
@@ -267,12 +608,15 @@ fun LogFoodScreen(
 
                 Button(
                     onClick = {
-                        // Create 3 dummy Bitmaps to run sequential background worker queue
-                        val b1 = Bitmap.createBitmap(150, 150, Bitmap.Config.ARGB_8888)
-                        val b2 = Bitmap.createBitmap(150, 150, Bitmap.Config.ARGB_8888)
-                        val b3 = Bitmap.createBitmap(150, 150, Bitmap.Config.ARGB_8888)
-                        viewModel.clearBatchQueue()
-                        viewModel.addToBatchQueue(listOf(b1, b2, b3))
+                        if (!hasUltraAccess) {
+                            navController.navigate("paywall")
+                        } else {
+                            val b1 = Bitmap.createBitmap(150, 150, Bitmap.Config.ARGB_8888)
+                            val b2 = Bitmap.createBitmap(150, 150, Bitmap.Config.ARGB_8888)
+                            val b3 = Bitmap.createBitmap(150, 150, Bitmap.Config.ARGB_8888)
+                            viewModel.clearBatchQueue()
+                            viewModel.addToBatchQueue(listOf(b1, b2, b3))
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = CardDark),
                     border = BorderStroke(1.dp, SoftLime.copy(alpha = 0.4f)),
@@ -399,7 +743,7 @@ fun LogFoodScreen(
             }
 
             // Bottom camera layout actions
-            if (cameraPermissionState.status.isGranted) {
+            if (cameraPermissionState.status.isGranted && hasUltraAccess) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -410,25 +754,32 @@ fun LogFoodScreen(
                     // Shutter button
                     IconButton(
                         onClick = {
-                            // Execute standard CameraX image capture and process resulting bitmap
-                            val mainExecutor = ContextCompat.getMainExecutor(context)
-                            cameraController.takePicture(
-                                mainExecutor,
-                                object : ImageCapture.OnImageCapturedCallback() {
-                                    override fun onCaptureSuccess(image: ImageProxy) {
-                                        val bitmap = imageProxyToBitmap(image)
-                                        image.close()
-                                        if (bitmap != null) {
-                                            capturedBitmap = bitmap
-                                            viewModel.analyzeFoodImage(bitmap)
+                            if (isCameraHardwareAvailable && cameraController != null) {
+                                // Execute standard CameraX image capture and process resulting bitmap
+                                val mainExecutor = ContextCompat.getMainExecutor(context)
+                                cameraController.takePicture(
+                                    mainExecutor,
+                                    object : ImageCapture.OnImageCapturedCallback() {
+                                        override fun onCaptureSuccess(image: ImageProxy) {
+                                            val bitmap = imageProxyToBitmap(image)
+                                            image.close()
+                                            if (bitmap != null) {
+                                                capturedBitmap = bitmap
+                                                aiScannerViewModel.scanFoodImage(bitmap)
+                                            }
+                                        }
+
+                                        override fun onError(exception: androidx.camera.core.ImageCaptureException) {
+                                            Log.e("CameraX", "Trigger capture failed", exception)
                                         }
                                     }
-
-                                    override fun onError(exception: androidx.camera.core.ImageCaptureException) {
-                                        Log.e("CameraX", "Trigger capture failed", exception)
-                                    }
-                                }
-                            )
+                                )
+                            } else {
+                                // Simulate picture capture on browser/emulators by generating a mock bitmap
+                                val dummyBitmap = Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888)
+                                capturedBitmap = dummyBitmap
+                                aiScannerViewModel.scanFoodImage(dummyBitmap)
+                            }
                         },
                         modifier = Modifier
                             .size(72.dp)
@@ -447,7 +798,8 @@ fun LogFoodScreen(
             }
 
             // Processing and Loading Scanner Overlay
-            if (analysisState is CameraAnalysisState.Loading) {
+            val isScannerLoading = analysisState is CameraAnalysisState.Loading || aiScanState is AiScanState.Loading
+            if (isScannerLoading) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -512,31 +864,42 @@ fun LogFoodScreen(
             }
 
             // Error Overlay Dialog
-            if (analysisState is CameraAnalysisState.Error) {
-                val errorMsg = (analysisState as CameraAnalysisState.Error).message
+            val errorStateMsg = when {
+                analysisState is CameraAnalysisState.Error -> (analysisState as CameraAnalysisState.Error).message
+                aiScanState is AiScanState.Error -> (aiScanState as AiScanState.Error).message
+                else -> null
+            }
+            if (errorStateMsg != null) {
                 AlertDialog(
-                    onDismissRequest = { viewModel.resetCameraState() },
+                    onDismissRequest = {
+                        viewModel.resetCameraState()
+                        aiScannerViewModel.resetState()
+                    },
                     title = { Text("Analysis Error", color = Color.White, fontWeight = FontWeight.Bold) },
-                    text = { Text(errorMsg, color = GrayText) },
+                    text = { Text(errorStateMsg, color = GrayText) },
                     confirmButton = {
                         Button(
                             onClick = {
                                 viewModel.resetCameraState()
+                                aiScannerViewModel.resetState()
                                 navController.navigate("paywall")
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (errorMsg.contains("scans")) SoftLime else Color.Transparent),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (errorStateMsg.contains("scans") || errorStateMsg.contains("ULTRA")) SoftLime else Color.Transparent),
                             modifier = Modifier.testTag("error_go_premium_button")
                         ) {
                             Text(
-                                text = if (errorMsg.contains("scans")) "Unlock Premium" else "OK",
-                                color = if (errorMsg.contains("scans")) SlateBg else Color.White,
+                                text = if (errorStateMsg.contains("scans") || errorStateMsg.contains("ULTRA")) "Unlock Premium" else "OK",
+                                color = if (errorStateMsg.contains("scans") || errorStateMsg.contains("ULTRA")) SlateBg else Color.White,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     },
                     dismissButton = {
-                        if (errorMsg.contains("scans")) {
-                            TextButton(onClick = { viewModel.resetCameraState() }) {
+                        if (errorStateMsg.contains("scans") || errorStateMsg.contains("ULTRA")) {
+                            TextButton(onClick = {
+                                viewModel.resetCameraState()
+                                aiScannerViewModel.resetState()
+                            }) {
                                 Text("Dismiss", color = Color.White)
                             }
                         }
@@ -547,12 +910,20 @@ fun LogFoodScreen(
 
             // Visual results bottom sheets confirmation
             if (showEditSheet) {
-                val state = analysisState
-                if (state is CameraAnalysisState.Success) {
+                val isSuccess = analysisState is CameraAnalysisState.Success || aiScanState is AiScanState.Success
+                if (isSuccess) {
+                    val descText = if (analysisState is CameraAnalysisState.Success) {
+                        (analysisState as CameraAnalysisState.Success).result.description
+                    } else if (aiScanState is AiScanState.Success) {
+                        "Gemini estimated nutritional content based on visual analysis of portion volumes."
+                    } else {
+                        null
+                    }
                     AlertDialog(
                         onDismissRequest = {
                             showEditSheet = false
                             viewModel.resetCameraState()
+                            aiScannerViewModel.resetState()
                         },
                         title = {
                             Column {
@@ -563,7 +934,7 @@ fun LogFoodScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
-                                state.result.description?.let {
+                                descText?.let {
                                     Text(
                                         text = it,
                                         color = GrayText,
@@ -738,13 +1109,39 @@ fun LogFoodScreen(
                         confirmButton = {
                             Button(
                                 onClick = {
-                                    val nameVal = customFoodName.ifEmpty { state.result.foodName }
-                                    val caloriesVal = customCalories.toDoubleOrNull() ?: state.result.calories
-                                    val proteinVal = customProtein.toDoubleOrNull() ?: state.result.protein
-                                    val carbsVal = customCarbs.toDoubleOrNull() ?: state.result.carbs
-                                    val fatsVal = customFats.toDoubleOrNull() ?: state.result.fats
-                                    val sizeVal = customServingSize.toDoubleOrNull() ?: state.result.servingSize
-                                    val unitVal = customServingUnit.ifEmpty { state.result.servingUnit }
+                                    val nameVal = customFoodName.ifEmpty {
+                                        if (analysisState is CameraAnalysisState.Success) (analysisState as CameraAnalysisState.Success).result.foodName
+                                        else if (aiScanState is AiScanState.Success) (aiScanState as AiScanState.Success).result.name
+                                        else ""
+                                    }
+                                    val caloriesVal = customCalories.toDoubleOrNull() ?: (
+                                        if (analysisState is CameraAnalysisState.Success) (analysisState as CameraAnalysisState.Success).result.calories
+                                        else if (aiScanState is AiScanState.Success) (aiScanState as AiScanState.Success).result.calories
+                                        else 0.0
+                                    )
+                                    val proteinVal = customProtein.toDoubleOrNull() ?: (
+                                        if (analysisState is CameraAnalysisState.Success) (analysisState as CameraAnalysisState.Success).result.protein
+                                        else if (aiScanState is AiScanState.Success) (aiScanState as AiScanState.Success).result.protein
+                                        else 0.0
+                                    )
+                                    val carbsVal = customCarbs.toDoubleOrNull() ?: (
+                                        if (analysisState is CameraAnalysisState.Success) (analysisState as CameraAnalysisState.Success).result.carbs
+                                        else if (aiScanState is AiScanState.Success) (aiScanState as AiScanState.Success).result.carbs
+                                        else 0.0
+                                    )
+                                    val fatsVal = customFats.toDoubleOrNull() ?: (
+                                        if (analysisState is CameraAnalysisState.Success) (analysisState as CameraAnalysisState.Success).result.fats
+                                        else if (aiScanState is AiScanState.Success) (aiScanState as AiScanState.Success).result.fat
+                                        else 0.0
+                                    )
+                                    val sizeVal = customServingSize.toDoubleOrNull() ?: (
+                                        if (analysisState is CameraAnalysisState.Success) (analysisState as CameraAnalysisState.Success).result.servingSize
+                                        else 1.0
+                                    )
+                                    val unitVal = customServingUnit.ifEmpty {
+                                        if (analysisState is CameraAnalysisState.Success) (analysisState as CameraAnalysisState.Success).result.servingUnit
+                                        else "serving"
+                                    }
 
                                     viewModel.logFood(
                                         name = nameVal,
@@ -761,6 +1158,7 @@ fun LogFoodScreen(
                                     )
                                     showEditSheet = false
                                     viewModel.resetCameraState()
+                                    aiScannerViewModel.resetState()
                                     navController.navigate("dashboard") {
                                         popUpTo("dashboard") { inclusive = false }
                                     }
@@ -775,6 +1173,7 @@ fun LogFoodScreen(
                             TextButton(onClick = {
                                 showEditSheet = false
                                 viewModel.resetCameraState()
+                                aiScannerViewModel.resetState()
                             }) {
                                 Text("Retry Capture", color = Color.White)
                             }
@@ -782,6 +1181,148 @@ fun LogFoodScreen(
                         containerColor = CardDark
                     )
                 }
+            }
+
+            if (showManualInputDialog) {
+                AlertDialog(
+                    onDismissRequest = { showManualInputDialog = false },
+                    title = {
+                        Text(
+                            text = "Manual Food Entry",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    text = {
+                        Column(
+                            modifier = Modifier
+                                .verticalScroll(rememberScrollState())
+                                .fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = manualFoodName,
+                                onValueChange = { manualFoodName = it },
+                                label = { Text("Food Item Name", color = SoftLime) },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = SoftLime,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                ),
+                                modifier = Modifier.fillMaxWidth().testTag("manual_dialog_name_input")
+                            )
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                OutlinedTextField(
+                                    value = manualCalories,
+                                    onValueChange = { manualCalories = it },
+                                    label = { Text("Calories (kcal)", color = SoftLime) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = SoftLime,
+                                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White
+                                    ),
+                                    modifier = Modifier.weight(1f).testTag("manual_dialog_calories_input")
+                                )
+                                OutlinedTextField(
+                                    value = manualProtein,
+                                    onValueChange = { manualProtein = it },
+                                    label = { Text("Protein (g)", color = SoftLime) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = SoftLime,
+                                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White
+                                    ),
+                                    modifier = Modifier.weight(1f).testTag("manual_dialog_protein_input")
+                                )
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                OutlinedTextField(
+                                    value = manualCarbs,
+                                    onValueChange = { manualCarbs = it },
+                                    label = { Text("Carbs (g)", color = SoftLime) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = SoftLime,
+                                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White
+                                    ),
+                                    modifier = Modifier.weight(1f).testTag("manual_dialog_carbs_input")
+                                )
+                                OutlinedTextField(
+                                    value = manualFats,
+                                    onValueChange = { manualFats = it },
+                                    label = { Text("Fats (g)", color = SoftLime) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = SoftLime,
+                                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White
+                                    ),
+                                    modifier = Modifier.weight(1f).testTag("manual_dialog_fats_input")
+                                )
+                            }
+
+                            OutlinedTextField(
+                                value = manualPortionSize,
+                                onValueChange = { manualPortionSize = it },
+                                label = { Text("Portion Size (servings)", color = SoftLime) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = SoftLime,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                ),
+                                modifier = Modifier.fillMaxWidth().testTag("manual_dialog_portion_input")
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                if (manualFoodName.isNotBlank() && manualCalories.isNotBlank()) {
+                                    viewModel.logFood(
+                                        name = manualFoodName,
+                                        calories = manualCalories.toDoubleOrNull() ?: 0.0,
+                                        protein = manualProtein.toDoubleOrNull() ?: 0.0,
+                                        carbs = manualCarbs.toDoubleOrNull() ?: 0.0,
+                                        fats = manualFats.toDoubleOrNull() ?: 0.0,
+                                        mealType = mealType,
+                                        servingSize = manualPortionSize.toDoubleOrNull() ?: 1.0,
+                                        servingUnit = "serving",
+                                        latitude = fetchedLatitude,
+                                        longitude = fetchedLongitude,
+                                        locationName = fetchedLocationName
+                                    )
+                                    showManualInputDialog = false
+                                    navController.navigate("dashboard") {
+                                        popUpTo("dashboard") { inclusive = false }
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = SoftLime),
+                            enabled = manualFoodName.isNotBlank() && manualCalories.isNotBlank()
+                        ) {
+                            Text("Log Food", color = SlateBg, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showManualInputDialog = false }) {
+                            Text("Cancel", color = Color.White)
+                        }
+                    },
+                    containerColor = CardDark
+                )
             }
         }
     }

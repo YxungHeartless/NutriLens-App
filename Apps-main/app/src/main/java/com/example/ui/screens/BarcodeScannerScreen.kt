@@ -25,15 +25,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
 import com.example.domain.model.MealType
 import com.example.ui.components.*
 import com.example.ui.viewmodel.BarcodeItem
 import com.example.ui.viewmodel.NutritionViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun BarcodeScannerScreen(
     navController: NavController,
@@ -89,8 +101,10 @@ fun BarcodeScannerScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Scanner View Finder Box Mock
+            // Genuine CameraX View Finder
             item {
+                val cameraPermissionState = rememberPermissionState(android.Manifest.permission.CAMERA)
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -99,39 +113,81 @@ fun BarcodeScannerScreen(
                         .background(Color.Black.copy(alpha = 0.5f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Moving red scanning laser mock
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Spacer(modifier = Modifier.weight(1f))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(0.85f)
-                                .height(2.dp)
-                                .background(
-                                    Brush.horizontalGradient(
-                                        colors = listOf(
-                                            Color.Red.copy(alpha = 0.1f),
-                                            Color.Red,
-                                            Color.Red.copy(alpha = 0.1f)
+                    if (cameraPermissionState.status.isGranted) {
+                        val context = LocalContext.current
+                        val lifecycleOwner = LocalLifecycleOwner.current
+
+                        AndroidView(
+                            factory = { ctx ->
+                                val previewView = PreviewView(ctx)
+                                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+
+                                cameraProviderFuture.addListener({
+                                    val cameraProvider = cameraProviderFuture.get()
+                                    val preview = Preview.Builder().build().also {
+                                        it.setSurfaceProvider(previewView.surfaceProvider)
+                                    }
+
+                                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+                                    try {
+                                        cameraProvider.unbindAll()
+                                        cameraProvider.bindToLifecycle(
+                                            lifecycleOwner,
+                                            cameraSelector,
+                                            preview
+                                        )
+                                    } catch (e: Exception) {
+                                        Log.e("CameraPreview", "Use case binding failed", e)
+                                    }
+                                }, ContextCompat.getMainExecutor(ctx))
+
+                                previewView
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        // Moving red scanning laser
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Spacer(modifier = Modifier.weight(1f))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.85f)
+                                    .height(2.dp)
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            colors = listOf(
+                                                Color.Red.copy(alpha = 0.1f),
+                                                Color.Red,
+                                                Color.Red.copy(alpha = 0.1f)
+                                            )
                                         )
                                     )
-                                )
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
-
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.QrCodeScanner,
-                            contentDescription = null,
-                            tint = SoftLime.copy(alpha = 0.6f),
-                            modifier = Modifier.size(54.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Position barcode inside boundaries", color = GrayText, fontSize = 11.sp)
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    } else {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.NoPhotography,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.6f),
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Camera permission is required to scan barcodes.", color = GrayText, fontSize = 11.sp, textAlign = TextAlign.Center)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = { cameraPermissionState.launchPermissionRequest() },
+                                colors = ButtonDefaults.buttonColors(containerColor = SoftLime)
+                            ) {
+                                Text("Grant Permission", color = SlateBg, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }

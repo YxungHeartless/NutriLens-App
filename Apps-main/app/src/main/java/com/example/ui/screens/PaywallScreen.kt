@@ -1,7 +1,6 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -15,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,24 +26,28 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.example.data.database.SubscriptionTier
 import com.example.ui.viewmodel.NutritionViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PaywallScreen(
     navController: NavController,
-    viewModel: NutritionViewModel
+    viewModel: NutritionViewModel,
+    widthSizeClass: WindowWidthSizeClass = WindowWidthSizeClass.Compact
 ) {
-    val isPremiumActive by viewModel.isPremiumUserFlow.collectAsState()
-    val scanCount by viewModel.scanCountFlow.collectAsState()
     val scrollState = rememberScrollState()
+    
+    // Backwards compatible premium state or sandbox toggle
+    val isPremiumActive by viewModel.isPremiumUserFlow.collectAsState()
+    var selectedTier by remember { mutableStateOf(SubscriptionTier.PRO) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { 
                     Text(
-                        text = "Premium Plan",
+                        text = "Choose Your Tier",
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold
@@ -82,7 +86,7 @@ fun PaywallScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                // Top Header Badge
+                // Header Area
                 Icon(
                     imageVector = Icons.Default.WorkspacePremium,
                     contentDescription = "Premium Offer Icon",
@@ -96,13 +100,12 @@ fun PaywallScreen(
                         .padding(16.dp)
                 )
 
-                // Title & Subtitle
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Unlock NutriLens Pro",
+                        text = "Unlock NutriLens Premium",
                         style = MaterialTheme.typography.headlineLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.ExtraBold,
@@ -110,7 +113,7 @@ fun PaywallScreen(
                         modifier = Modifier.testTag("paywall_title")
                     )
                     Text(
-                        text = "Empower your wellness with deep cosmic neural analysis",
+                        text = "Select the tier that matches your wellness journey",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -118,7 +121,7 @@ fun PaywallScreen(
                     )
                 }
 
-                // Premium vs Local scan status banner
+                // Sandbox Toggle Banner
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
@@ -136,14 +139,14 @@ fun PaywallScreen(
                     ) {
                         Column {
                             Text(
-                                text = "Current Usage Status",
+                                text = "Sandbox Sandbox Status",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = if (isPremiumActive) "UNLIMITED ACCESS" else "Free Scans Remaining: ${maxOf(0, 3 - scanCount)}/3",
+                                text = if (isPremiumActive) "PRO/ULTRA ACTIVE" else "FREE TIER ACTIVE",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = if (isPremiumActive) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.ExtraBold,
@@ -164,201 +167,215 @@ fun PaywallScreen(
                     }
                 }
 
-                // Feature List
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                // Adaptive pricing layouts
+                if (widthSizeClass == WindowWidthSizeClass.Compact) {
+                    // Vertical Stack for phones
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        PricingCard(
+                            tier = SubscriptionTier.FREE,
+                            title = "Free Tier",
+                            price = "$0.00",
+                            highlights = listOf("Basic macro records", "Daily logging tracker", "Standard view logs"),
+                            isSelected = selectedTier == SubscriptionTier.FREE,
+                            onSelect = { selectedTier = SubscriptionTier.FREE }
+                        )
+                        PricingCard(
+                            tier = SubscriptionTier.PRO,
+                            title = "Pro Tier",
+                            price = "$4.99",
+                            subtitle = "Geo-shopping & Radar",
+                            highlights = listOf("Interactive location mapping", "Macro radar tags", "7-day trends & charts"),
+                            isSelected = selectedTier == SubscriptionTier.PRO,
+                            onSelect = { selectedTier = SubscriptionTier.PRO }
+                        )
+                        PricingCard(
+                            tier = SubscriptionTier.ULTRA,
+                            title = "Ultra Tier",
+                            price = "$9.99",
+                            subtitle = "AI Fridge Scanner & Recipes",
+                            highlights = listOf("Unlimited AI Fridge Scans", "Automatic recipe macro builders", "Interactive AI Coach chats"),
+                            isSelected = selectedTier == SubscriptionTier.ULTRA,
+                            onSelect = { selectedTier = SubscriptionTier.ULTRA }
+                        )
+                    }
+                } else {
+                    // Horizontal Grid for tablets/foldables
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            PricingCard(
+                                tier = SubscriptionTier.FREE,
+                                title = "Free Tier",
+                                price = "$0.00",
+                                highlights = listOf("Basic macro records", "Daily logging tracker", "Standard view logs"),
+                                isSelected = selectedTier == SubscriptionTier.FREE,
+                                onSelect = { selectedTier = SubscriptionTier.FREE }
+                            )
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            PricingCard(
+                                tier = SubscriptionTier.PRO,
+                                title = "Pro Tier",
+                                price = "$4.99",
+                                subtitle = "Geo-shopping & Radar",
+                                highlights = listOf("Interactive location mapping", "Macro radar tags", "7-day trends & charts"),
+                                isSelected = selectedTier == SubscriptionTier.PRO,
+                                onSelect = { selectedTier = SubscriptionTier.PRO }
+                            )
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            PricingCard(
+                                tier = SubscriptionTier.ULTRA,
+                                title = "Ultra Tier",
+                                price = "$9.99",
+                                subtitle = "AI Fridge Scanner & Recipes",
+                                highlights = listOf("Unlimited AI Fridge Scans", "Automatic recipe macro builders", "Interactive AI Coach chats"),
+                                isSelected = selectedTier == SubscriptionTier.ULTRA,
+                                onSelect = { selectedTier = SubscriptionTier.ULTRA }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Start 7-Day Trial Call-to-action button
+                Button(
+                    onClick = {
+                        viewModel.selectSubscriptionTier(selectedTier)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .testTag("subscribe_now_button"),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
                     Text(
-                        text = "WHAT'S INCLUDED",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
-                    )
-
-                    FeatureRow(
-                        icon = Icons.Default.CameraAlt,
-                        title = "Unlimited AI Photo Scans",
-                        description = "Instantly estimate exact calorie counts, macronutrients, and ingredients from any food photo."
-                    )
-                    FeatureRow(
-                        icon = Icons.Default.CalendarMonth,
-                        title = "Full Weekly Summary & Trends",
-                        description = "Receive detailed deep-dives of your nutritional logs, weekly balance graphs, and metric comparisons."
-                    )
-                    FeatureRow(
-                        icon = Icons.Default.Star,
-                        title = "Advanced Biometric Calibration",
-                        description = "Calibrate limits and goals dynamically with continuous physical burns imported from Health Connect."
-                    )
-                    FeatureRow(
-                        icon = Icons.Default.Favorite,
-                        title = "Cosmic Slate Core Engine",
-                        description = "Keep records, scan food offline, and design custom meal plans in your personal slate profile."
+                        text = "Start 7-Day Free Trial",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Offer Card
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                    border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(100.dp),
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                        ) {
-                            Text(
-                                text = "POPULAR PLAN",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                        }
-                        Text(
-                            text = "Monthly Full Access",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Row(
-                            verticalAlignment = Alignment.Bottom,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                text = "$4.99",
-                                style = MaterialTheme.typography.displayMedium,
-                                fontWeight = FontWeight.Black,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "/ month",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(bottom = 6.dp)
-                            )
-                        }
-                        Text(
-                            text = "Cancel anytime. No lock-in contracts.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                // Subscribe Button / Success Active State
-                AnimatedVisibility(
-                    visible = !isPremiumActive,
-                    enter = fadeIn() + slideInVertically { it / 2 },
-                    exit = fadeOut()
-                ) {
-                    Button(
-                        onClick = { viewModel.togglePremiumStatus() },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .testTag("subscribe_now_button"),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Text(
-                            text = "Subscribe Now",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                AnimatedVisibility(
-                    visible = isPremiumActive,
-                    enter = fadeIn() + slideInVertically { it / 2 },
-                    exit = fadeOut()
-                ) {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("premium_active_indicator"),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Active Indicator",
-                                tint = MaterialTheme.colorScheme.tertiary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "Premium Subscription Active!",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.tertiary,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
 }
 
 @Composable
-fun FeatureRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+fun PricingCard(
+    tier: SubscriptionTier,
     title: String,
-    description: String
+    price: String,
+    subtitle: String = "",
+    highlights: List<String>,
+    isSelected: Boolean,
+    onSelect: () -> Unit
 ) {
-    Row(
+    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+    val borderWidth = if (isSelected) 2.5.dp else 1.dp
+    
+    Card(
+        onClick = onSelect,
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalAlignment = Alignment.Top
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant
+        ),
+        border = BorderStroke(borderWidth, borderColor)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
+        Column(
             modifier = Modifier
-                .size(24.dp)
-                .padding(top = 2.dp)
-        )
-        Column {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (tier == SubscriptionTier.ULTRA) {
+                    Surface(
+                        shape = RoundedCornerShape(100.dp),
+                        color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f)
+                    ) {
+                        Text(
+                            text = "ULTIMATE",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            if (subtitle.isNotEmpty()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = price,
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "/ month",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                highlights.forEach { highlight ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = highlight,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
         }
     }
 }

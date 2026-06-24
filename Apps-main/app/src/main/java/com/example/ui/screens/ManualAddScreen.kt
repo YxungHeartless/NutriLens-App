@@ -12,6 +12,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,6 +47,14 @@ fun ManualAddScreen(
     mealTypeString: String
 ) {
     val mealType = MealType.fromString(mealTypeString)
+    val suggestions by viewModel.manualSuggestions.collectAsState()
+    val isSearching by viewModel.isSearchingSuggestions.collectAsState()
+
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.clearSuggestions()
+        }
+    }
 
     var foodName by remember { mutableStateOf("") }
     var calories by remember { mutableStateOf("") }
@@ -130,20 +140,110 @@ fun ManualAddScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    OutlinedTextField(
-                        value = foodName,
-                        onValueChange = { foodName = it },
-                        label = { Text("Food Item Name", color = SoftLime) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = SoftLime,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("manual_food_name_input")
-                    )
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = foodName,
+                            onValueChange = {
+                                foodName = it
+                                viewModel.searchFoodSuggestions(it)
+                            },
+                            label = { Text("Food Item Name", color = SoftLime) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = SoftLime,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            trailingIcon = {
+                                if (isSearching) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = SoftLime
+                                    )
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("manual_food_name_input")
+                        )
+                    }
+
+                    if (suggestions.isNotEmpty() && foodName.length >= 2) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .geminiGlass(cornerRadius = 12.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                        ) {
+                            Column {
+                                suggestions.forEach { food ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                foodName = food.description
+                                                
+                                                // Extract macros
+                                                var cal = 0.0
+                                                var prot = 0.0
+                                                var carb = 0.0
+                                                var fat = 0.0
+                                                food.foodNutrients?.forEach { nutrient ->
+                                                    val name = nutrient.nutrientName ?: ""
+                                                    val id = nutrient.nutrientId
+                                                    val valD = nutrient.value ?: 0.0
+                                                    
+                                                    when {
+                                                        name.contains("protein", ignoreCase = true) || id == 1003 -> prot = valD
+                                                        (name.contains("fat", ignoreCase = true) || name.contains("lipid", ignoreCase = true)) && !name.contains("fatty", ignoreCase = true) || id == 1004 -> fat = valD
+                                                        name.contains("carbohydrate", ignoreCase = true) || id == 1005 -> carb = valD
+                                                        (name.contains("energy", ignoreCase = true) && (nutrient.unitName?.contains("kcal", ignoreCase = true) == true || nutrient.unitName?.contains("energy", ignoreCase = true) == true)) || id == 1008 -> cal = valD
+                                                    }
+                                                }
+                                                calories = cal.toInt().toString()
+                                                protein = prot.toInt().toString()
+                                                carbs = carb.toInt().toString()
+                                                fats = fat.toInt().toString()
+                                                servingSize = "1.0"
+                                                servingUnit = "serving"
+                                                
+                                                // Clear suggestions after selection
+                                                viewModel.clearSuggestions()
+                                            }
+                                            .padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = food.description,
+                                                color = Color.White,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 13.sp
+                                            )
+                                            val cal = food.foodNutrients?.find { (it.nutrientName ?: "").contains("energy", ignoreCase = true) || it.nutrientId == 1008 }?.value ?: 0.0
+                                            Text(
+                                                text = "USDA ID: ${food.fdcId} • ${cal.toInt()} kcal per 100g",
+                                                color = SoftLime,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "Select suggestion",
+                                            tint = SoftLime,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+                                }
+                            }
+                        }
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),

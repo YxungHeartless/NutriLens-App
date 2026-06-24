@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -6,14 +8,15 @@ plugins {
   alias(libs.plugins.secrets)
 }
 
-android {
-  namespace = "com.example"
-  compileSdk { version = release(36) { minorApiLevel = 1 } }
 
-  defaultConfig {
-    applicationId = "com.example"
+android {
+  namespace = "com.heartless.foodtrackerglow"
+    compileSdk = 36
+
+    defaultConfig {
+    applicationId = "com.heartless.foodtrackerglow"
     minSdk = 26
-    targetSdk = 36
+    targetSdk = 35
     versionCode = 1
     versionName = "1.0"
 
@@ -29,7 +32,7 @@ android {
       keyPassword = System.getenv("KEY_PASSWORD")
     }
     create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
+      storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
       storePassword = "android"
       keyAlias = "androiddebugkey"
       keyPassword = "android"
@@ -44,7 +47,6 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      signingConfig = signingConfigs.getByName("debugConfig")
     }
   }
   compileOptions {
@@ -58,11 +60,10 @@ android {
   testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
-// Configure the Secrets Gradle Plugin to use .env and .env.example files
-// to match the convention used in Web projects.
+// Configure the Secrets Gradle Plugin to use local.properties
 secrets {
-  propertiesFileName = ".env"
-  defaultPropertiesFileName = ".env.example"
+  propertiesFileName = "local.properties"
+  defaultPropertiesFileName = "local.properties"
 }
 
 // Some unused dependencies are commented out below instead of being removed.
@@ -80,6 +81,7 @@ dependencies {
   implementation(libs.androidx.compose.material.icons.extended)
   implementation(libs.androidx.compose.material3)
   implementation("androidx.compose.material3:material3-window-size-class")
+  implementation("androidx.window:window:1.3.0")
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.graphics)
   implementation(libs.androidx.compose.ui.tooling.preview)
@@ -93,6 +95,9 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
+  implementation(libs.androidx.credentials)
+  implementation(libs.androidx.credentials.play.services.auth)
+  implementation(libs.googleid)
   // implementation(libs.firebase.ai)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
@@ -107,6 +112,12 @@ dependencies {
   implementation(libs.androidx.glance.appwidget)
   implementation(libs.androidx.glance.material3)
   implementation("javax.inject:javax.inject:1")
+  implementation(libs.firebase.auth)
+  implementation(libs.koin.android)
+  implementation(libs.koin.androidx.compose)
+  implementation("com.google.maps.android:maps-compose:4.3.3")
+  implementation("com.google.android.gms:play-services-maps:18.2.0")
+  implementation("com.google.mlkit:barcode-scanning:17.3.0")
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)
